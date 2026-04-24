@@ -1,5 +1,54 @@
 # JobedIn V3 -- Final Merged Plan
 
+## Progress Tracker
+
+| Day | Phase | Description | Status | Commit |
+|-----|-------|-------------|--------|--------|
+| Day 1 | Foundation | Project Scaffolding + Docker Compose | DONE | `33bf30b` |
+| Day 2 | Foundation | Database Models + Alembic Migrations | DONE | `528ccae` |
+| Day 3 | Foundation | Auth + Middleware | TODO | -- |
+| Day 4 | Foundation | Onboarding API + Frontend Wizard | TODO | -- |
+| Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | TODO | -- |
+| Day 6 | AI Pipeline | Resume Generation Pipeline | TODO | -- |
+| Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
+| Day 8 | AI Pipeline | Interactive Interview Coach | TODO | -- |
+| Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
+| Day 10 | Job Discovery | LinkedIn Playwright Discovery | TODO | -- |
+| Day 11 | Job Discovery | API Sources + Merge/Deduplication | TODO | -- |
+| Day 12 | Job Discovery | Matching + Scoring | TODO | -- |
+| Day 13 | Job Discovery | Job Discovery Frontend | TODO | -- |
+| Day 14 | Dashboard | Dashboard | TODO | -- |
+| Day 15 | Dashboard | Profile Page | TODO | -- |
+| Day 16 | Dashboard | Applications Tracker | TODO | -- |
+| Day 17 | Auto-Apply | Playwright Setup + ATS Detection | TODO | -- |
+| Day 18 | Auto-Apply | ATS Form Fillers | TODO | -- |
+| Day 19 | Auto-Apply | Auto-Apply Orchestrator | TODO | -- |
+| Day 20 | Auto-Apply | Apply Frontend | TODO | -- |
+| Day 21 | Polish | Error Handling + Edge Cases | TODO | -- |
+| Day 22 | Polish | Testing | TODO | -- |
+| Day 23 | Polish | Deployment + Documentation | TODO | -- |
+
+### Day 1 Completion Notes
+- FastAPI backend scaffold with health check endpoint
+- Next.js 15 frontend scaffold with Tailwind v4
+- Docker Compose: backend + postgres:16-alpine + redis:7-alpine
+- Sentry SDK initialized in backend
+- `pyproject.toml` with all backend dependencies
+- All services healthy via Docker health checks
+
+### Day 2 Completion Notes
+- 14 SQLModel table models in `backend/app/models/`
+- 4 enums: `ExperienceLevel`, `JobSource`, `ApplicationStatus`, `RemotePolicy`
+- `TimestampModel` base class with UUID PK + timestamps
+- Alembic wired to `SQLModel.metadata` in `env.py`
+- Initial migration `b92a4db8bc54` — all 14 tables created in Docker Postgres
+- Seed script `backend/scripts/seed.py` with test data
+- Upgraded `sqlmodel` from 0.0.24 to >=0.0.38 (Pydantic v2 fix)
+- All 12 FK relationships, JSON columns, unique constraints verified
+- Backend health check passing, existing tests passing
+
+---
+
 ## Decisions Locked In
 
 | Feature | Approach | Source |
