@@ -7,7 +7,7 @@
 | Day 1 | Foundation | Project Scaffolding + Docker Compose | DONE | `33bf30b` |
 | Day 2 | Foundation | Database Models + Alembic Migrations | DONE | `528ccae` |
 | Day 3 | Foundation | Auth + Middleware | DONE | `42bdbb2` |
-| Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | -- |
+| Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | `2649829` |
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | TODO | -- |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | TODO | -- |
 | Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
