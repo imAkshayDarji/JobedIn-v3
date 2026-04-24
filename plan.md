@@ -6,7 +6,7 @@
 |-----|-------|-------------|--------|--------|
 | Day 1 | Foundation | Project Scaffolding + Docker Compose | DONE | `33bf30b` |
 | Day 2 | Foundation | Database Models + Alembic Migrations | DONE | `528ccae` |
-| Day 3 | Foundation | Auth + Middleware | TODO | -- |
+| Day 3 | Foundation | Auth + Middleware | DONE | `42bdbb2` |
 | Day 4 | Foundation | Onboarding API + Frontend Wizard | TODO | -- |
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | TODO | -- |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | TODO | -- |
@@ -46,6 +46,22 @@
 - Upgraded `sqlmodel` from 0.0.24 to >=0.0.38 (Pydantic v2 fix)
 - All 12 FK relationships, JSON columns, unique constraints verified
 - Backend health check passing, existing tests passing
+
+### Day 3 Completion Notes
+- Backend JWT auth via PyJWT with `get_current_user` and `get_optional_user` dependencies
+- Auth routes: `GET /api/auth/me`, `GET /api/auth/verify`, `POST /api/auth/sync-profile`
+- Health endpoint moved from `main.py` to `backend/app/routes/health.py`
+- Supabase SSR client utilities (`client.ts`, `server.ts`, `middleware.ts`)
+- Next.js middleware for route protection (8 protected paths, 2 auth-only redirects)
+- Login/Register pages with email+password and Google OAuth
+- OAuth callback handler at `/auth/callback`
+- Protected dashboard page with user info and sign out
+- Typed API client (`src/lib/api.ts`) with auto-auth headers
+- Landing page buttons wired to `/auth/login` and `/auth/register`
+- `.env.example` updated with `NEXT_PUBLIC_SUPABASE_*` vars and `SUPABASE_JWT_SECRET`
+- 10 backend tests passing (9 auth + 1 health)
+- Frontend builds with zero errors, all routes registered
+- Sentry user context set on successful auth
 
 ---
 
