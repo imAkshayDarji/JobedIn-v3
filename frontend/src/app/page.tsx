@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "JobedIn - AI-Powered Job Search",
@@ -12,12 +13,18 @@ export default function HomePage() {
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
         <span className="text-xl font-bold text-gray-900">JobedIn</span>
         <nav className="flex gap-4">
-          <span className="text-sm text-gray-600 cursor-pointer hover:text-gray-900">
+          <Link
+            href="/auth/login"
+            className="text-sm text-gray-600 hover:text-gray-900"
+          >
             Sign In
-          </span>
-          <span className="text-sm font-medium text-white bg-blue-600 px-4 py-1.5 rounded-md cursor-pointer hover:bg-blue-700">
+          </Link>
+          <Link
+            href="/auth/register"
+            className="text-sm font-medium text-white bg-blue-600 px-4 py-1.5 rounded-md hover:bg-blue-700"
+          >
             Get Started
-          </span>
+          </Link>
         </nav>
       </header>
 
@@ -31,18 +38,18 @@ export default function HomePage() {
           insights to connect you with opportunities that actually fit.
         </p>
         <div className="mt-10 flex gap-4">
-          <button
-            type="button"
+          <Link
+            href="/auth/register"
             className="rounded-md bg-blue-600 px-6 py-3 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             Get Started
-          </button>
-          <button
-            type="button"
+          </Link>
+          <Link
+            href="/auth/login"
             className="rounded-md border border-gray-300 bg-white px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             Sign In
-          </button>
+          </Link>
         </div>
       </main>
 
