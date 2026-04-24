@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.routes.auth import router as auth_router
+from app.routes.health import router as health_router
 
 if settings.SENTRY_DSN_BACKEND:
     sentry_sdk.init(
@@ -33,7 +35,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+app.include_router(health_router)
+app.include_router(auth_router)

@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ENVIRONMENT: str = "development"
     SENTRY_DSN_BACKEND: str = ""
+    SUPABASE_URL: str = ""
+    SUPABASE_ANON_KEY: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_JWT_SECRET: str = ""
 
 
 settings = Settings()
