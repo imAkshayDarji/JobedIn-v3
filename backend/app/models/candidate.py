@@ -22,3 +22,5 @@ class CandidateProfile(TimestampModel, table=True):
     experience_level: ExperienceLevel | None = Field(default=None)
     linkedin_email: str | None = Field(default=None)
     linkedin_password_encrypted: str | None = Field(default=None)
+    onboarding_step: int = Field(default=0)
+    onboarding_completed: bool = Field(default=False)

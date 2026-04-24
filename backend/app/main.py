@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routes.auth import router as auth_router
 from app.routes.health import router as health_router
+from app.routes.onboarding import router as onboarding_router
 
 if settings.SENTRY_DSN_BACKEND:
     sentry_sdk.init(
@@ -37,3 +38,4 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(onboarding_router)

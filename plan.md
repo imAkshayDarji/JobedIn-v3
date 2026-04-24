@@ -7,7 +7,7 @@
 | Day 1 | Foundation | Project Scaffolding + Docker Compose | DONE | `33bf30b` |
 | Day 2 | Foundation | Database Models + Alembic Migrations | DONE | `528ccae` |
 | Day 3 | Foundation | Auth + Middleware | DONE | `42bdbb2` |
-| Day 4 | Foundation | Onboarding API + Frontend Wizard | TODO | -- |
+| Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | -- |
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | TODO | -- |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | TODO | -- |
 | Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
@@ -62,6 +62,23 @@
 - 10 backend tests passing (9 auth + 1 health)
 - Frontend builds with zero errors, all routes registered
 - Sentry user context set on successful auth
+
+### Day 4 Completion Notes
+- Pydantic v2 schemas for onboarding in `backend/app/schemas/onboarding.py`
+- `onboarding_step` and `onboarding_completed` fields added to `CandidateProfile`
+- Alembic migration `b78895d1fb4b` with server defaults for existing rows
+- 3 onboarding endpoints: `POST /api/onboarding/upload-resume`, `POST /api/onboarding/save`, `GET /api/onboarding/status`
+- Resume upload extracts text from PDF via PyPDF2, returns structured pre-fill data
+- Atomic save: deletes + recreates child records in single transaction with rollback
+- Status endpoint returns completion percentage, existing data for pre-fill
+- PyPDF2 added to `pyproject.toml` dependencies
+- 8 new backend tests (all passing), 18 total tests passing
+- Frontend: react-hook-form, zod, lucide-react installed
+- 5-step onboarding wizard with step indicator, back/next navigation
+- Zod validation schemas matching backend Pydantic schemas
+- TypeScript interfaces for all onboarding types
+- Client-side redirect to `/dashboard` if onboarding already completed
+- Frontend builds with zero errors
 
 ---
 
