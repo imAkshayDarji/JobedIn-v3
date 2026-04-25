@@ -10,10 +10,12 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def generate_resume_job(ctx: dict[str, Any], job_id: str, user_id: str, candidate_profile_id: str, job_description: str) -> dict[str, Any]:
+async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str, candidate_profile_id: str, job_description: str) -> dict[str, Any]:
     from app.database import async_session_factory
+    from app.models.resume import Resume
     from app.services.ai_client import AIClient
     from app.services.ai_pipeline import AIPipeline
+    from sqlalchemy import select
 
     pipeline = AIPipeline(
         ai_client=AIClient(),
@@ -22,22 +24,55 @@ async def generate_resume_job(ctx: dict[str, Any], job_id: str, user_id: str, ca
     async def session_factory():
         return async_session_factory()
 
+    # Update resume status to "generating"
+    async with async_session_factory() as session:
+        result = await session.execute(select(Resume).where(Resume.id == resume_id))
+        resume = result.scalar_one_or_none()
+        if resume is None:
+            logger.error(f"Resume {resume_id} not found in DB")
+            return {"status": "error", "error": "Resume not found"}
+        resume.status = "generating"
+        await session.commit()
+
     try:
-        result = await pipeline.run_full_pipeline(
+        pipeline_result = await pipeline.run_full_pipeline(
             job_description=job_description,
             candidate_profile_id=candidate_profile_id,
             user_id=user_id,
             get_session=session_factory,
         )
+
+        # Persist result to resume record
+        async with async_session_factory() as session:
+            result = await session.execute(select(Resume).where(Resume.id == resume_id))
+            resume = result.scalar_one_or_none()
+            if resume:
+                resume.status = "completed"
+                resume.content_json = pipeline_result.get("resume")
+                resume.ats_score = pipeline_result.get("ats_result", {}).get("overall_score")
+                resume.ats_breakdown = pipeline_result.get("ats_result")
+                await session.commit()
+
         logger.info(
             "Resume generation complete",
-            extra={"job_id": job_id, "user_id": user_id},
+            extra={"resume_id": resume_id, "user_id": user_id, "ats_score": pipeline_result.get("ats_result", {}).get("overall_score")},
         )
-        return result
+        return pipeline_result
     except Exception as exc:
+        # Mark resume as failed
+        try:
+            async with async_session_factory() as session:
+                result = await session.execute(select(Resume).where(Resume.id == resume_id))
+                resume = result.scalar_one_or_none()
+                if resume:
+                    resume.status = "failed"
+                    await session.commit()
+        except Exception as db_exc:
+            logger.error(f"Failed to mark resume as failed: {db_exc}")
+
         logger.error(
             f"Resume generation failed: {exc}",
-            extra={"job_id": job_id, "user_id": user_id},
+            extra={"resume_id": resume_id, "user_id": user_id},
         )
         raise
 

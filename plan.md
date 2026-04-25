@@ -9,7 +9,7 @@
 | Day 3 | Foundation | Auth + Middleware | DONE | `42bdbb2` |
 | Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | `2649829` |
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | DONE | `24eb87c` |
-| Day 6 | AI Pipeline | Resume Generation Pipeline | TODO | -- |
+| Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | -- |
 | Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
 | Day 8 | AI Pipeline | Interactive Interview Coach | TODO | -- |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
@@ -96,8 +96,26 @@
 - arq worker service added to `docker-compose.yml`
 - Pydantic v2 schemas for `JobAnalysis`, `GapAnalysis`, `ResumeContent`, `ATSResult` in `schemas/ai.py`
 - `pyproject.toml` + `requirements.txt` updated with `arq==0.26.1`, `redis[hiredis]==5.2.1`
-- Fixed 3 pre-existing test failures (auth/onboarding tests expecting 403 instead of 401)
+- Fixed 3 pre-existing test failures (auth/onboarding tests: HTTPBearer now returns 401 for missing tokens instead of 403)
 - 45 tests passing (27 new Day 5 tests + 18 existing tests)
+
+### Day 6 Completion Notes
+- `GET /api/profile/me` -- returns candidate profile summary (name, onboarding status, experience level)
+- Pydantic v2 schemas for resume routes in `backend/app/schemas/resume.py`: 8 schemas with `@model_validator` for generate validation
+- Resume routes in `backend/app/routes/resumes.py`:
+  - `POST /api/resumes/generate` -- accepts job_id or job_description, enqueues ARQ background job
+  - `POST /api/resumes/generate-manual` -- accepts raw job description text (min 50 chars)
+  - `GET /api/resumes/{id}/status` -- returns generation status + ATS score
+  - `GET /api/resumes` -- list with pagination (limit/offset) + deferred column loading
+  - `GET /api/resumes/{id}` -- full resume with ownership check, 202 if still generating
+  - `DELETE /api/resumes/{id}` -- delete with ownership check
+- Dedup guard: returns cached completed resume if same user+job generated within 5 minutes
+- `Resume` model updated with `status` field (generating/completed/failed) + composite index `(user_id, created_at DESC)`
+- Alembic migration `c3a1f2e4d56b` for index + status column
+- ARQ worker enqueue with failure handling: marks resume as "failed" if Redis unavailable
+- `get_current_user` auth dependency fixed: `HTTPBearer(auto_error=False)` + explicit 401 for missing tokens
+- 14 new resume route tests + 3 previously failing auth tests fixed = 59 total tests passing
+- Frontend: resumes pages (list, generate, detail), API client modules, TypeScript types
 
 ---
 
@@ -317,11 +335,16 @@ Step 4: VALIDATE (ATS scoring)
 - Integration tests deferred to Day 9
 
 ### Day 6: Resume Generation Pipeline
-- `POST /api/resumes/generate` -- job_id + user_id, runs 4-step pipeline
-- `POST /api/resumes/generate-manual` -- raw job description text
-- `GET /api/resumes/{id}` + `GET /api/resumes` -- retrieve/list
-- SSE streaming for progress events
+- `POST /api/resumes/generate` -- job_id or job_description, enqueues ARQ background job
+- `POST /api/resumes/generate-manual` -- raw job description text (min 50 chars)
+- `GET /api/resumes/{id}/status` -- generation status + ATS score
+- `GET /api/resumes` -- list with pagination + deferred column loading
+- `GET /api/resumes/{id}` -- full resume with ownership check, 202 if still generating
+- `DELETE /api/resumes/{id}` -- delete with ownership check
+- Dedup guard: returns cached completed resume within 5-minute window
+- `GET /api/profile/me` -- candidate profile summary for resume generation context
 - arq background worker for long-running generation
+- SSE streaming for progress events (deferred to polish phase)
 
 ### Day 7: Cover Letter Generation
 - Structured prompt with tone selection (professional/casual/enthusiastic)

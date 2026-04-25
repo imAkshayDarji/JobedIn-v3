@@ -8,6 +8,8 @@ from app.config import settings
 from app.routes.auth import router as auth_router
 from app.routes.health import router as health_router
 from app.routes.onboarding import router as onboarding_router
+from app.routes.profile import router as profile_router
+from app.routes.resumes import router as resume_router
 
 if settings.SENTRY_DSN_BACKEND:
     sentry_sdk.init(
@@ -42,3 +44,5 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(onboarding_router)
+app.include_router(profile_router)
+app.include_router(resume_router)

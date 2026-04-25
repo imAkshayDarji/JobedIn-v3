@@ -15,7 +15,7 @@ class CurrentUser(SQLModel):
     role: str = "authenticated"
 
 
-security_scheme = HTTPBearer()
+security_scheme = HTTPBearer(auto_error=False)
 
 
 def _decode_token(token: str) -> dict:
@@ -70,8 +70,14 @@ def _payload_to_user(payload: dict) -> CurrentUser:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
 ) -> CurrentUser:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = _decode_token(credentials.credentials)
     return _payload_to_user(payload)
 
