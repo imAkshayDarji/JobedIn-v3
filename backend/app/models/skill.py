@@ -1,6 +1,6 @@
 import uuid
 
-from sqlmodel import Field
+from sqlmodel import Field, Relationship
 
 from app.models.base import TimestampModel
 
@@ -12,3 +12,5 @@ class Skill(TimestampModel, table=True):
     name: str
     category: str | None = Field(default=None)
     proficiency: str | None = Field(default=None)
+
+    candidate: "CandidateProfile" = Relationship(back_populates="skills")  # type: ignore[assignment]

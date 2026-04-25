@@ -22,6 +22,24 @@ services:
       timeout: 5s
       retries: 3
 
+  ai-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["arq", "app.workers.ai_worker.WorkerSettings"]
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - jobedin-network
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     ports:

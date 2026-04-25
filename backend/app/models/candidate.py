@@ -1,6 +1,7 @@
 import uuid
 
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Column, JSON as SA_JSON
+from sqlmodel import Field, Relationship
 
 from app.models.base import ExperienceLevel, TimestampModel
 
@@ -24,3 +25,33 @@ class CandidateProfile(TimestampModel, table=True):
     linkedin_password_encrypted: str | None = Field(default=None)
     onboarding_step: int = Field(default=0)
     onboarding_completed: bool = Field(default=False)
+
+    skills: list["Skill"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    education: list["Education"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    experience: list["Experience"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    projects: list["Project"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    target_roles: list["TargetRole"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    certifications: list["Certification"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    languages: list["Language"] = Relationship(  # type: ignore[assignment]
+        back_populates="candidate",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+

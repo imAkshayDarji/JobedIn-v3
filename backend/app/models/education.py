@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlmodel import Field
+from sqlmodel import Field, Relationship
 
 from app.models.base import TimestampModel
 
@@ -17,3 +17,5 @@ class Education(TimestampModel, table=True):
     end_date: date | None = Field(default=None)
     grade: str | None = Field(default=None)
     description: str | None = Field(default=None)
+
+    candidate: "CandidateProfile" = Relationship(back_populates="education")  # type: ignore[assignment]

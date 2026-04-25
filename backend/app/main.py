@@ -20,6 +20,9 @@ if settings.SENTRY_DSN_BACKEND:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    from app.services.redis_pool import close_redis
+
+    await close_redis()
 
 
 app = FastAPI(

@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlmodel import Field
+from sqlmodel import Field, Relationship
 
 from app.models.base import TimestampModel
 
@@ -15,3 +15,5 @@ class Certification(TimestampModel, table=True):
     issue_date: date | None = Field(default=None)
     expiry_date: date | None = Field(default=None)
     credential_url: str | None = Field(default=None)
+
+    candidate: "CandidateProfile" = Relationship(back_populates="certifications")  # type: ignore[assignment]
