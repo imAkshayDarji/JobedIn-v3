@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AppLayout } from "@/components/layout/AppLayout";
 
 interface UserProfile {
   email: string;
@@ -35,49 +36,32 @@ export default function DashboardPage() {
     loadUser();
   }, []);
 
-  async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/auth/login");
-  }
-
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
-      </div>
+      <AppLayout>
+        <div className="mx-auto max-w-7xl px-6 py-12">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mb-2" />
+            <div className="h-4 bg-gray-200 rounded w-1/2" />
+          </div>
+        </div>
+      </AppLayout>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-gray-500">Redirecting to login...</p>
-      </div>
+      <AppLayout>
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <p className="text-gray-500">Redirecting to login...</p>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/dashboard" className="text-xl font-bold text-gray-900">
-            JobedIn
-          </Link>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{user.email}</span>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-6 py-12">
+    <AppLayout>
+      <div className="mx-auto max-w-7xl px-6 py-12">
         <h1 className="text-3xl font-bold text-gray-900">
           Welcome, {user.email}
         </h1>
@@ -86,26 +70,30 @@ export default function DashboardPage() {
         </p>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
+          <Link href="/resumes" className="block">
+            <div className="rounded-lg border border-gray-200 bg-white p-6 hover:border-blue-300 hover:shadow-sm transition-all">
+              <h3 className="font-semibold text-gray-900">Resumes</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Manage and optimize your resumes
+              </p>
+            </div>
+          </Link>
+          <div className="rounded-lg border border-gray-200 bg-white p-6 opacity-60">
             <h3 className="font-semibold text-gray-900">Jobs</h3>
             <p className="mt-1 text-sm text-gray-500">
               Browse AI-matched opportunities
             </p>
+            <p className="mt-2 text-xs text-gray-400">Coming soon</p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h3 className="font-semibold text-gray-900">Resumes</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Manage and optimize your resumes
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
+          <div className="rounded-lg border border-gray-200 bg-white p-6 opacity-60">
             <h3 className="font-semibold text-gray-900">Applications</h3>
             <p className="mt-1 text-sm text-gray-500">
               Track your job applications
             </p>
+            <p className="mt-2 text-xs text-gray-400">Coming soon</p>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
