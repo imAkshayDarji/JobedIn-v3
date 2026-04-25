@@ -9,7 +9,7 @@
 | Day 3 | Foundation | Auth + Middleware | DONE | `42bdbb2` |
 | Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | `2649829` |
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | DONE | `24eb87c` |
-| Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | -- |
+| Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | `89ed778` |
 | Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
 | Day 8 | AI Pipeline | Interactive Interview Coach | TODO | -- |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
