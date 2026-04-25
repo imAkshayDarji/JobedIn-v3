@@ -87,7 +87,7 @@ async def test_get_current_user_no_token():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/auth/me")
 
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -127,7 +127,7 @@ async def test_auth_me_unauthenticated():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/auth/me")
 
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

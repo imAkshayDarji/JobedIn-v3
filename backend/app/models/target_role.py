@@ -1,6 +1,6 @@
 import uuid
 
-from sqlmodel import Field
+from sqlmodel import Field, Relationship
 
 from app.models.base import TimestampModel
 
@@ -12,3 +12,5 @@ class TargetRole(TimestampModel, table=True):
     title: str
     priority: int = Field(default=0)
     keywords: str | None = Field(default=None)
+
+    candidate: "CandidateProfile" = Relationship(back_populates="target_roles")  # type: ignore[assignment]

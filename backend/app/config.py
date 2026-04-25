@@ -18,5 +18,19 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""
 
+    AI_PIPELINE_TIMEOUT_SECONDS: int = 120
+    AI_STALE_JOB_SWEEP_INTERVAL_SECONDS: int = 300
+    AI_MAX_RETRIES: int = 2
+    AI_RETRY_BASE_DELAY_SECONDS: float = 1.0
+    AI_MALFORMED_RETRIES: int = 1
+
+    GLM_API_KEY: str = ""
+    GLM_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
+    GLM_MODEL: str = "glm-4-plus"
+
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_MODEL: str = "gpt-4o"
+
 
 settings = Settings()

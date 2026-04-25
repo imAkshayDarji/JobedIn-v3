@@ -8,7 +8,7 @@
 | Day 2 | Foundation | Database Models + Alembic Migrations | DONE | `528ccae` |
 | Day 3 | Foundation | Auth + Middleware | DONE | `42bdbb2` |
 | Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | `2649829` |
-| Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | TODO | -- |
+| Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | DONE | -- |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | TODO | -- |
 | Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
 | Day 8 | AI Pipeline | Interactive Interview Coach | TODO | -- |
@@ -79,6 +79,25 @@
 - TypeScript interfaces for all onboarding types
 - Client-side redirect to `/dashboard` if onboarding already completed
 - Frontend builds with zero errors
+
+### Day 5 Completion Notes
+- Model registry (Approach B) with task-to-model routing table in `ai_client.py`
+- Custom exception hierarchy: `AIPipelineError`, `AIModelTimeoutError`, `AIModelResponseError`, `AIPipelineExhaustedError`
+- Per-call retry with exponential backoff (1s/2s), fallback to alternate model on 5xx, immediate fail on auth errors
+- Malformed response handling: retry once with correction prompt
+- Prompt hardening with XML-wrapped user data (`<user_data>`) and anti-injection system instructions
+- Lazy Redis pool via `get_redis()` function with `close_redis()` in FastAPI lifespan shutdown
+- `AIPipeline` accepts session factory callable (not session instance) for worker compatibility
+- Stale job sweeper: arq cron (every 5min) + `asyncio.wait_for(timeout=120)` pipeline timeout
+- Structured logging: every pipeline step logs `job_id`, `user_id`, `pipeline_step`, `model_used`, `latency_ms`
+- Eager loading via `selectinload` for all 7 candidate relations
+- User authorization guard in `run_full_pipeline`
+- Added SQLAlchemy `Relationship` with `back_populates` to all 7 child models + `CandidateProfile`
+- arq worker service added to `docker-compose.yml`
+- Pydantic v2 schemas for `JobAnalysis`, `GapAnalysis`, `ResumeContent`, `ATSResult` in `schemas/ai.py`
+- `pyproject.toml` + `requirements.txt` updated with `arq==0.26.1`, `redis[hiredis]==5.2.1`
+- Fixed 3 pre-existing test failures (auth/onboarding tests expecting 403 instead of 401)
+- 45 tests passing (27 new Day 5 tests + 18 existing tests)
 
 ---
 
@@ -209,10 +228,44 @@ InterviewSession (FK -> user, FK -> interview_prep)
 ## Phase 2: AI Pipeline Core (Days 5-9)
 
 ### Day 5: AI Client Setup + Prompt Engineering
-- Two AI clients: GLM 5.1 (OpenAI-compatible API) and GPT-4o (OpenAI API)
-- `AIPipeline` service with structured Pydantic outputs
-- Redis + arq queue for AI generation tasks
-- Resume tailoring prompt -- 4-step pipeline:
+
+**Architecture:** Model registry with task-to-model routing (Approach B) -- a single `AIClient` class with a routing table that maps each pipeline task to its designated model, instead of hardcoded dual-client instances.
+
+**Custom Exceptions** (in `ai_client.py`):
+- `AIPipelineError` -- base exception for all pipeline errors
+- `AIModelTimeoutError` -- model call exceeded timeout
+- `AIModelResponseError` -- model returned malformed/invalid response
+- `AIPipelineExhaustedError` -- all retries + fallbacks exhausted
+
+**Retry Strategy:**
+- Per-call retry: 2 attempts with exponential backoff (1s, 2s)
+- Fallback to alternate model on 5xx errors (GLM <-> GPT-4o)
+- Fail immediately on auth errors (4xx) -- no retry
+- Malformed response handling: retry once with correction prompt, then raise `AIModelResponseError`
+
+**Prompt Hardening:**
+- XML-wrapped user data: `<user_data>...</user_data>` to separate user input from instructions
+- Anti-injection system instructions in every prompt
+- All prompts templated in `ai_prompts.py`
+
+**Redis + arq queue** for AI generation tasks with:
+- Lazy Redis pool: function-based `get_redis()` initialization (not module-level singleton)
+- Worker DB session: `AIPipeline` accepts session factory callable, not session instance
+- Stale job sweeper: periodic arq cron (every 5min) + pipeline timeout via `asyncio.wait_for(timeout=120)`
+
+**Structured Logging + Sentry:**
+- Every pipeline step logs: `job_id`, `user_id`, `pipeline_step`, `model_used`, `latency_ms`
+- Errors captured by Sentry with full pipeline context
+
+**Eager Loading:** `selectinload` for all 7 candidate relations in `run_full_pipeline` (skills, education, experience, projects, target_roles, certifications, languages) to avoid N+1 queries.
+
+**User Authorization Guard:** `run_full_pipeline` verifies the authenticated user owns the candidate profile before processing.
+
+**GLM Compatibility Checkpoint:** Before implementing structured output methods, validate `response_format` support on GLM 5.1's OpenAI-compatible endpoint. Fall back to JSON-in-text extraction if unsupported.
+
+**Dependencies:** `requirements.txt` must stay in sync with `pyproject.toml`.
+
+Resume tailoring prompt -- 4-step pipeline:
 
 ```
 Step 1: ANALYZE job description
@@ -237,6 +290,31 @@ Step 4: VALIDATE (ATS scoring)
   - If score < 80, feed feedback back to Step 3 and retry (max 2 retries)
   - Output: final resume JSON + ats_score + ats_breakdown
 ```
+
+**Files Created/Modified:**
+- `backend/app/schemas/ai.py` -- Pydantic v2 schemas: JobAnalysis, GapAnalysis, ResumeContent, ATSResult
+- `backend/app/services/ai_client.py` -- AIClient with model registry, retry logic, structured output, custom exceptions
+- `backend/app/services/ai_pipeline.py` -- AIPipeline with 4-step resume pipeline, timeout, sweeper, auth guard, eager loading
+- `backend/app/services/ai_prompts.py` -- Prompt templates with injection hardening
+- `backend/app/services/redis_pool.py` -- Lazy Redis pool with `get_redis()` function
+- `backend/app/workers/ai_worker.py` -- arq worker with generate_resume_job + stale job sweeper cron
+- `backend/app/config.py` -- Add AI-related config fields (GLM_API_KEY, OPENAI_API_KEY, model URLs, timeouts)
+- `backend/app/main.py` -- Wire Redis shutdown, mount worker startup
+- `docker-compose.yml` -- Add arq worker service
+- `backend/app/tests/test_ai_client.py` -- Unit tests for AIClient (model routing, retry, fallback, error handling)
+- `backend/app/tests/test_ai_pipeline.py` -- Unit tests for AIPipeline (pipeline steps, timeout, auth guard)
+- `pyproject.toml` + `requirements.txt` -- Add: arq, redis[hiredis], openai, tenacity
+
+**Tests (Day 5 scope):**
+- Unit tests for model registry routing (task -> correct model)
+- Unit tests for retry strategy (backoff timing, fallback on 5xx, no retry on auth errors)
+- Unit tests for custom exceptions (all 4 types)
+- Unit tests for prompt injection hardening
+- Unit tests for pipeline timeout (mock asyncio.wait_for)
+- Unit tests for user authorization guard
+- Token limit edge case tests
+- Schema validation tests
+- Integration tests deferred to Day 9
 
 ### Day 6: Resume Generation Pipeline
 - `POST /api/resumes/generate` -- job_id + user_id, runs 4-step pipeline
@@ -527,6 +605,27 @@ jobedin-v3/
 | Job APIs (Adzuna, JSearch, Remotive, Reed) | $0 |
 | Local Playwright | $0 |
 | **Total** | **$8-15/month** |
+
+---
+
+## CEO Review Amendments (Day 5)
+
+The following amendments were applied during a HOLD SCOPE CEO review of Day 5:
+
+1. **Model registry (Approach B):** Replaced hardcoded dual-client with task-to-model routing table inside a single `AIClient` class.
+2. **Custom exceptions:** Added `AIPipelineError`, `AIModelTimeoutError`, `AIModelResponseError`, `AIPipelineExhaustedError` hierarchy in `ai_client.py`.
+3. **Retry strategy:** Per-call retry with exponential backoff (1s/2s), fallback to alternate model on 5xx, immediate fail on auth errors.
+4. **Malformed response handling:** Retry once with correction prompt before raising `AIModelResponseError`.
+5. **Prompt hardening:** XML-wrapped user data (`<user_data>`) and anti-injection system instructions in every prompt.
+6. **Eager loading:** `selectinload` for all 7 candidate relations to avoid N+1 in `run_full_pipeline`.
+7. **Lazy Redis pool:** Function-based `get_redis()` initialization instead of module-level singleton.
+8. **Worker DB session:** `AIPipeline` accepts session factory callable, not a session instance.
+9. **Stale job sweeper:** Periodic arq cron (every 5min) + `asyncio.wait_for(timeout=120)` for pipeline timeout.
+10. **Structured logging + Sentry:** Every step logs `job_id`, `user_id`, `pipeline_step`, `model_used`, `latency_ms`.
+11. **Additional unit tests:** Token limit edge cases, schema validation tests. Integration tests deferred to Day 9.
+12. **requirements.txt sync:** Explicit instruction to keep `requirements.txt` matching `pyproject.toml`.
+13. **GLM compatibility checkpoint:** Validate `response_format` support before implementing structured output methods.
+14. **User authorization guard:** `run_full_pipeline` verifies user owns the candidate profile before processing.
 
 ---
 

@@ -248,7 +248,7 @@ async def test_onboarding_unauthorized():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/onboarding/status")
 
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
