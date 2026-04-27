@@ -11,7 +11,7 @@
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | DONE | `24eb87c` |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | `89ed778` |
 | Day 7 | AI Pipeline | Cover Letter Generation | DONE | `5b4922a` |
-| Day 8 | AI Pipeline | Interactive Interview Coach | DONE | -- |
+| Day 8 | AI Pipeline | Interactive Interview Coach | DONE | `ed6d652` |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | TODO | -- |
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | TODO | -- |
