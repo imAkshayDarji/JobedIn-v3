@@ -1,0 +1,7 @@
+{
+  "score": 7.5,
+  "strengths": ["Good use of specific example", "Clear communication"],
+  "improvements": ["Could provide more detail on the outcome"],
+  "coaching_tip": "Always quantify your results when possible.",
+  "sample_answer": "In my previous role, I led a project to migrate our monolith to microservices. I started by identifying the most independent service, created a detailed migration plan, and executed it over 3 sprints. The result was a 40% reduction in deployment time."
+}

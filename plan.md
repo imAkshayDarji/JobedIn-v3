@@ -12,7 +12,7 @@
 | Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | `89ed778` |
 | Day 7 | AI Pipeline | Cover Letter Generation | DONE | `5b4922a` |
 | Day 8 | AI Pipeline | Interactive Interview Coach | DONE | `ed6d652` |
-| Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
+| Day 9 | AI Pipeline | AI Pipeline Testing + Polish | DONE | -- |
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | TODO | -- |
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | TODO | -- |
 | Day 12 | Job Discovery | Matching + Scoring | TODO | -- |
@@ -418,6 +418,26 @@ Step 4: VALIDATE (ATS scoring)
 - Error handling: model timeout, rate limit, invalid output
 - Fallback: GLM <-> GPT-4o mutual retry
 - Token usage tracking per user
+
+### Day 9 Completion Notes
+- `AIResult` dataclass introduced in `ai_client.py`: wraps all AI call results with `content`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `model_used`, `latency_ms`
+- `AIClient.call()` and `AIClient._call_with_structured_output()` now return `AIResult` instead of raw content
+- Token usage extraction from OpenAI-compatible API response `usage` fields
+- `AIPipeline._token_usage` list tracks per-call usage; `get_token_usage()` returns aggregated stats
+- All pipeline methods (`analyze_job`, `gap_analysis`, `generate_resume`, `validate_ats`, `generate_cover_letter`, `evaluate_interview_answer`, `generate_session_summary`) now record token usage via `_record_usage()`
+- `run_full_pipeline`, `run_cover_letter_pipeline`, `run_interview_prep_pipeline` all inject `token_usage` into returned dict
+- `AITokenUsage` SQLModel for database persistence of per-task usage
+- Alembic migration `e5f6a7b8c9d0` creates `ai_token_usage` table with indexes on `user_id` and `(user_id, created_at DESC)`
+- `_persist_token_usage()` helper in `ai_worker.py` creates `AITokenUsage` records after each pipeline run
+- All 3 worker jobs (`generate_resume_job`, `generate_cover_letter_job`, `generate_interview_prep_job`) persist token usage
+- 7 golden output fixture files in `tests/fixtures/golden_outputs/`: `analyze_job.json`, `gap_analysis.json`, `generate_resume.json`, `validate_ats.json`, `generate_cover_letter.json`, `interview_questions.json`, `evaluate_answer.json`
+- Integration test files: `test_resume_pipeline_integration.py` (5 tests), `test_cover_letter_pipeline_integration.py` (5 tests), `test_interview_pipeline_integration.py` (5 tests)
+- Error handling tests in `test_error_handling.py` (8 tests): timeout, rate limit, invalid output, GLM-to-OpenAI fallback, OpenAI-to-GLM fallback, all models exhausted, empty response, model refusal
+- Prompt regression tests in `test_prompt_regression.py` (11 tests): golden output schema validation, structural requirements (anti-injection, user_data wrapping), template stability via SHA-256 hash
+- Token tracking tests in `test_token_tracking.py` (6 tests): extraction from response, aggregation across calls, AIResult field behavior
+- `requirements.txt` synced with `pyproject.toml` (`sqlmodel>=0.0.38`)
+- Fixed missing `Any` import in `test_ai_client.py`
+- 142 total backend tests passing, frontend builds with zero errors, all Docker services healthy
 
 ---
 

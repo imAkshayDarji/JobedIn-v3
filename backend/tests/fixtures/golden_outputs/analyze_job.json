@@ -1,0 +1,18 @@
+{
+  "required_skills": [
+    {"name": "Python", "importance": "required"},
+    {"name": "FastAPI", "importance": "required"},
+    {"name": "PostgreSQL", "importance": "required"},
+    {"name": "Docker", "importance": "preferred"},
+    {"name": "AWS", "importance": "preferred"}
+  ],
+  "responsibilities": [
+    "Design and build RESTful APIs",
+    "Write clean, testable code",
+    "Collaborate with frontend team"
+  ],
+  "keywords": ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "REST", "API", "CI/CD", "TDD", "Git"],
+  "tone": "professional",
+  "company_values": ["Innovation", "Collaboration"],
+  "experience_level_required": "mid"
+}

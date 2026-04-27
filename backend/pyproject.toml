@@ -23,7 +23,12 @@ dependencies = [
 dev = [
     "pytest==8.3.5",
     "pytest-asyncio==0.26.0",
+    "pytest-cov>=6.0",
 ]
+
+[tool.pytest.ini_options]
+addopts = "--cov=app --cov-report=term-missing --cov-report=html"
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["setuptools>=75.0"]

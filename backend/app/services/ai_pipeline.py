@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.services.ai_client import (
     AIClient,
+    AIResult,
     AIPipelineError,
 )
 from app.services.ai_prompts import (
@@ -49,6 +50,34 @@ class AIPipeline:
     ) -> None:
         self._client = ai_client or AIClient()
         self._session_factory = session_factory
+        self._token_usage: list[dict[str, Any]] = []
+
+    def get_token_usage(self) -> dict[str, Any]:
+        if not self._token_usage:
+            return {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "calls": 0,
+                "models_used": [],
+            }
+        return {
+            "prompt_tokens": sum(u["prompt_tokens"] for u in self._token_usage),
+            "completion_tokens": sum(u["completion_tokens"] for u in self._token_usage),
+            "total_tokens": sum(u["total_tokens"] for u in self._token_usage),
+            "calls": len(self._token_usage),
+            "models_used": list({u["model_used"] for u in self._token_usage}),
+        }
+
+    def _record_usage(self, result: AIResult, task: str) -> None:
+        self._token_usage.append({
+            "task": task,
+            "model_used": result.model_used,
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "total_tokens": result.total_tokens,
+            "latency_ms": result.latency_ms,
+        })
 
     async def _get_session(self) -> AsyncSession:
         if self._session_factory is None:
@@ -65,8 +94,9 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
+        self._record_usage(result, "analyze_job")
         logger.info("analyze_job complete", extra={**log_ctx, "latency_ms": latency_ms})
-        return result
+        return result.content
 
     async def gap_analysis(
         self,
@@ -86,8 +116,9 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
+        self._record_usage(result, "gap_analysis")
         logger.info("gap_analysis complete", extra={**log_ctx, "latency_ms": latency_ms})
-        return result
+        return result.content
 
     async def generate_resume(
         self,
@@ -109,8 +140,9 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
+        self._record_usage(result, "generate_resume")
         logger.info("generate_resume complete", extra={**log_ctx, "latency_ms": latency_ms})
-        return result
+        return result.content
 
     async def validate_ats(
         self,
@@ -130,8 +162,9 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
+        self._record_usage(result, "validate_ats")
         logger.info("validate_ats complete", extra={**log_ctx, "latency_ms": latency_ms})
-        return result
+        return result.content
 
     async def run_full_pipeline(
         self,
@@ -163,6 +196,7 @@ class AIPipeline:
             logger.error("Pipeline timed out", extra=ctx)
             raise AIPipelineError(f"Pipeline timed out after {settings.AI_PIPELINE_TIMEOUT_SECONDS}s")
 
+        result["token_usage"] = self.get_token_usage()
         return result
 
     async def _execute_pipeline(
@@ -198,7 +232,8 @@ class AIPipeline:
                 response_model=ResumeContent,
                 context={**ctx, "pipeline_step": "ats_retry"},
             )
-            resume = retry_result
+            self._record_usage(retry_result, "ats_retry")
+            resume = retry_result.content
         else:
             ats_result = await self.validate_ats(resume, job_analysis, context=ctx)
 
@@ -229,8 +264,9 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
+        self._record_usage(result, "generate_cover_letter")
         logger.info("generate_cover_letter complete", extra={**log_ctx, "latency_ms": latency_ms})
-        return result
+        return result.content
 
     async def run_cover_letter_pipeline(
         self,
@@ -264,6 +300,7 @@ class AIPipeline:
             logger.error("Cover letter pipeline timed out", extra=ctx)
             raise AIPipelineError(f"Pipeline timed out after {settings.AI_PIPELINE_TIMEOUT_SECONDS}s")
 
+        result["token_usage"] = self.get_token_usage()
         return result
 
     async def _execute_cover_letter_pipeline(
@@ -410,8 +447,10 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
-        logger.info("generate_interview_questions complete", extra={**log_ctx, "latency_ms": latency_ms, "question_count": result.total_questions})
-        return result
+        self._record_usage(result, "generate_interview_questions")
+        content = result.content
+        logger.info("generate_interview_questions complete", extra={**log_ctx, "latency_ms": latency_ms, "question_count": content.total_questions})
+        return content
 
     async def evaluate_interview_answer(
         self,
@@ -435,8 +474,10 @@ class AIPipeline:
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
-        logger.info("evaluate_interview_answer complete", extra={**log_ctx, "latency_ms": latency_ms, "score": result.score})
-        return result
+        self._record_usage(result, "evaluate_interview_answer")
+        content = result.content
+        logger.info("evaluate_interview_answer complete", extra={**log_ctx, "latency_ms": latency_ms, "score": content.score})
+        return content
 
     async def generate_session_summary(
         self,
@@ -452,12 +493,12 @@ class AIPipeline:
                 messages_json=json.dumps(messages),
                 scores=scores,
             ),
-            response_model=str,
             context=log_ctx,
         )
         latency_ms = (time.monotonic() - start) * 1000
+        self._record_usage(result, "generate_session_summary")
         logger.info("generate_session_summary complete", extra={**log_ctx, "latency_ms": latency_ms})
-        return result
+        return result.content
 
     async def run_interview_prep_pipeline(
         self,
@@ -485,6 +526,7 @@ class AIPipeline:
             logger.error("Interview prep pipeline timed out", extra=ctx)
             raise AIPipelineError(f"Pipeline timed out after {settings.AI_PIPELINE_TIMEOUT_SECONDS}s")
 
+        result["token_usage"] = self.get_token_usage()
         return result
 
     async def _execute_interview_prep_pipeline(

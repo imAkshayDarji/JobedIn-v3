@@ -1,0 +1,17 @@
+{
+  "overall_score": 85.0,
+  "keyword_score": 80.0,
+  "section_score": 90.0,
+  "keyword_checks": [
+    {"keyword": "Python", "found": true, "count": 3},
+    {"keyword": "FastAPI", "found": true, "count": 2},
+    {"keyword": "Docker", "found": false, "count": 0}
+  ],
+  "section_checks": [
+    {"section": "Summary", "present": true, "score": 90.0},
+    {"section": "Skills", "present": true, "score": 95.0},
+    {"section": "Experience", "present": true, "score": 85.0}
+  ],
+  "missing_keywords": ["Docker"],
+  "suggestions": ["Add Docker to skills section"]
+}

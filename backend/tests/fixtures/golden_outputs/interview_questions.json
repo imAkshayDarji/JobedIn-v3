@@ -1,0 +1,17 @@
+{
+  "questions": [
+    {"question": "What do you know about our company?", "category": "company_research", "difficulty": 1, "follow_up_hints": ["Check the company website"]},
+    {"question": "Explain the GIL in Python", "category": "technical", "difficulty": 2, "follow_up_hints": ["Think about threading"]},
+    {"question": "Tell me about a time you resolved a conflict", "category": "behavioral", "difficulty": 1, "follow_up_hints": ["Use STAR format"]},
+    {"question": "How do you handle code reviews?", "category": "culture_fit", "difficulty": 2, "follow_up_hints": ["Think about feedback"]},
+    {"question": "Research our recent product launch", "category": "company_research", "difficulty": 2, "follow_up_hints": ["Check recent news"]},
+    {"question": "How would you design a rate limiter?", "category": "technical", "difficulty": 3, "follow_up_hints": ["Consider token bucket"]},
+    {"question": "Describe a project you led", "category": "behavioral", "difficulty": 2, "follow_up_hints": ["Focus on leadership"]},
+    {"question": "What is your preferred work style?", "category": "culture_fit", "difficulty": 1, "follow_up_hints": ["Be honest"]},
+    {"question": "How does our product compare to competitors?", "category": "company_research", "difficulty": 3, "follow_up_hints": ["Research market"]},
+    {"question": "Implement a binary search tree", "category": "technical", "difficulty": 1, "follow_up_hints": ["Start with insert"]},
+    {"question": "Tell me about a failure and what you learned", "category": "behavioral", "difficulty": 3, "follow_up_hints": ["Focus on growth"]},
+    {"question": "How do you stay current with technology?", "category": "culture_fit", "difficulty": 3, "follow_up_hints": ["Mention communities"]}
+  ],
+  "total_questions": 12
+}

@@ -10,6 +10,26 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+async def _persist_token_usage(
+    session: Any,
+    user_id: str,
+    token_usage: dict[str, Any],
+) -> None:
+    from app.models.ai_usage import AITokenUsage
+
+    for entry in token_usage.get("detail", []):
+        record = AITokenUsage(
+            user_id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
+            task=entry["task"],
+            model_used=entry["model_used"],
+            prompt_tokens=entry["prompt_tokens"],
+            completion_tokens=entry["completion_tokens"],
+            total_tokens=entry["total_tokens"],
+            latency_ms=entry["latency_ms"],
+        )
+        session.add(record)
+
+
 async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str, candidate_profile_id: str, job_description: str) -> dict[str, Any]:
     from app.database import async_session_factory
     from app.models.resume import Resume
@@ -24,7 +44,6 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
     async def session_factory():
         return async_session_factory()
 
-    # Update resume status to "generating"
     async with async_session_factory() as session:
         result = await session.execute(select(Resume).where(Resume.id == resume_id))
         resume = result.scalar_one_or_none()
@@ -42,7 +61,8 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
             get_session=session_factory,
         )
 
-        # Persist result to resume record
+        token_usage = pipeline_result.get("token_usage", {})
+
         async with async_session_factory() as session:
             result = await session.execute(select(Resume).where(Resume.id == resume_id))
             resume = result.scalar_one_or_none()
@@ -51,6 +71,20 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
                 resume.content_json = pipeline_result.get("resume")
                 resume.ats_score = pipeline_result.get("ats_result", {}).get("overall_score")
                 resume.ats_breakdown = pipeline_result.get("ats_result")
+
+                if token_usage.get("calls", 0) > 0:
+                    usage_detail = []
+                    for u in pipeline._token_usage:
+                        usage_detail.append({
+                            "task": u["task"],
+                            "model_used": u["model_used"],
+                            "prompt_tokens": u["prompt_tokens"],
+                            "completion_tokens": u["completion_tokens"],
+                            "total_tokens": u["total_tokens"],
+                            "latency_ms": u["latency_ms"],
+                        })
+                    await _persist_token_usage(session, user_id, {"detail": usage_detail})
+
                 await session.commit()
 
         logger.info(
@@ -59,7 +93,6 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
         )
         return pipeline_result
     except Exception as exc:
-        # Mark resume as failed
         try:
             async with async_session_factory() as session:
                 result = await session.execute(select(Resume).where(Resume.id == resume_id))
@@ -117,6 +150,10 @@ async def generate_cover_letter_job(
         )
 
         cover_letter_data = pipeline_result.get("cover_letter", {})
+        token_usage = pipeline_result.get("token_usage", {})
+        models_used = token_usage.get("models_used", [])
+        ai_model_used = models_used[-1] if models_used else "unknown"
+
         async with async_session_factory() as session:
             result = await session.execute(select(CoverLetter).where(CoverLetter.id == cover_letter_id))
             cover_letter = result.scalar_one_or_none()
@@ -125,7 +162,21 @@ async def generate_cover_letter_job(
                 cover_letter.content_json = cover_letter_data
                 cover_letter.content = cover_letter_data.get("full_text", "")
                 cover_letter.tone = cover_letter_data.get("tone_used", tone)
-                cover_letter.ai_model_used = "glm-4-plus"
+                cover_letter.ai_model_used = ai_model_used
+
+                if token_usage.get("calls", 0) > 0:
+                    usage_detail = []
+                    for u in pipeline._token_usage:
+                        usage_detail.append({
+                            "task": u["task"],
+                            "model_used": u["model_used"],
+                            "prompt_tokens": u["prompt_tokens"],
+                            "completion_tokens": u["completion_tokens"],
+                            "total_tokens": u["total_tokens"],
+                            "latency_ms": u["latency_ms"],
+                        })
+                    await _persist_token_usage(session, user_id, {"detail": usage_detail})
+
                 await session.commit()
 
         logger.info(
@@ -189,12 +240,28 @@ async def generate_interview_prep_job(
         )
 
         questions_data = pipeline_result.get("questions", [])
+        token_usage = pipeline_result.get("token_usage", {})
+
         async with async_session_factory() as session:
             result = await session.execute(select(InterviewPrep).where(InterviewPrep.id == prep_id))
             prep = result.scalar_one_or_none()
             if prep:
                 prep.status = "completed"
                 prep.questions = questions_data
+
+                if token_usage.get("calls", 0) > 0:
+                    usage_detail = []
+                    for u in pipeline._token_usage:
+                        usage_detail.append({
+                            "task": u["task"],
+                            "model_used": u["model_used"],
+                            "prompt_tokens": u["prompt_tokens"],
+                            "completion_tokens": u["completion_tokens"],
+                            "total_tokens": u["total_tokens"],
+                            "latency_ms": u["latency_ms"],
+                        })
+                    await _persist_token_usage(session, user_id, {"detail": usage_detail})
+
                 await session.commit()
 
         logger.info(
@@ -223,22 +290,65 @@ async def generate_interview_prep_job(
 async def sweep_stale_jobs(ctx: dict[str, Any]) -> None:
     from datetime import datetime, timedelta, timezone
 
-    from redis.asyncio import Redis
+    from app.database import async_session_factory
+    from app.models.interview import InterviewPrep
+    from app.models.cover_letter import CoverLetter
+    from app.models.resume import Resume
+    from sqlalchemy import select
 
-    redis: Redis = ctx["redis"]
+    redis = ctx["redis"]
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-    cutoff_str = cutoff.isoformat()
 
+    stale_count = 0
     cursor = b"0"
     while True:
         cursor, keys = await redis.hscan("arq:job:result", cursor)
-        for key_fragment in keys:
-            pass
+        for key in keys:
+            job_data = await redis.hget("arq:job:result", key)
+            if job_data is None:
+                continue
 
-        if cursor == b"0":
-            break
+            try:
+                import json
+                data = json.loads(job_data)
+                job_result = data.get("result")
+                if job_result is not None:
+                    continue
 
-    logger.info("Stale job sweep complete")
+                enqueue_time_str = data.get("enqueue_time")
+                if enqueue_time_str is None:
+                    continue
+
+                enqueue_time = datetime.fromisoformat(enqueue_time_str)
+                if enqueue_time.tzinfo is None:
+                    enqueue_time = enqueue_time.replace(tzinfo=timezone.utc)
+
+                if enqueue_time >= cutoff:
+                    continue
+
+            except (json.JSONDecodeError, ValueError, TypeError):
+                continue
+
+            stale_count += 1
+            await redis.hdel("arq:job:result", key)
+
+    async with async_session_factory() as session:
+        stale_statuses = ["generating"]
+
+        for model_cls, label in [(Resume, "resume"), (CoverLetter, "cover_letter"), (InterviewPrep, "interview_prep")]:
+            stmt = select(model_cls).where(
+                model_cls.status.in_(stale_statuses),
+                model_cls.updated_at < cutoff,
+            )
+            result = await session.execute(stmt)
+            records = result.scalars().all()
+            for record in records:
+                record.status = "failed"
+                stale_count += 1
+                logger.info(f"Marked stale {label} {record.id} as failed")
+        await session.commit()
+
+    logger.info(f"Stale job sweep complete, cleaned {stale_count} stale jobs")
 
 
 async def startup(ctx: dict[str, Any]) -> None:

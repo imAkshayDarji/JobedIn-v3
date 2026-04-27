@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import httpx
@@ -12,6 +13,16 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class AIResult:
+    content: Any = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    model_used: str = ""
+    latency_ms: float = 0.0
 
 
 class AIPipelineError(Exception):
@@ -99,7 +110,7 @@ async def _call_openai_api(
     config: _ModelConfig,
     messages: list[dict[str, str]],
     response_format: dict[str, Any] | None = None,
-) -> str:
+) -> tuple[str, dict[str, int] | None]:
     headers = {
         "Authorization": f"Bearer {config.api_key}",
         "Content-Type": "application/json",
@@ -140,10 +151,22 @@ async def _call_openai_api(
         )
 
     data = response.json()
+
+    usage_raw = data.get("usage")
+    usage: dict[str, int] | None = None
+    if usage_raw is not None:
+        usage = {
+            "prompt_tokens": usage_raw.get("prompt_tokens", 0),
+            "completion_tokens": usage_raw.get("completion_tokens", 0),
+            "total_tokens": usage_raw.get("total_tokens", 0),
+        }
+
     try:
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as exc:
         raise AIModelResponseError(f"Malformed response from {config.model}: {data}") from exc
+
+    return content, usage
 
 
 def _extract_json_from_text(text: str) -> str:
@@ -188,7 +211,7 @@ class AIClient:
         messages: list[dict[str, str]],
         response_model: type[T] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> T | str:
+    ) -> AIResult:
         config, model_key = _get_model_for_task(task)
         log_ctx = {
             "task": task,
@@ -208,15 +231,25 @@ class AIClient:
                 start_time = time.monotonic()
 
                 try:
-                    raw = await self._call_with_structured_output(
+                    raw_result = await self._call_with_structured_output(
                         backend_config, messages, response_model
                     )
                     latency_ms = (time.monotonic() - start_time) * 1000
+
                     logger.info(
                         "AI call succeeded",
-                        extra={**log_ctx, "attempt": attempt + 1, "latency_ms": latency_ms},
+                        extra={
+                            **log_ctx,
+                            "attempt": attempt + 1,
+                            "latency_ms": latency_ms,
+                            "prompt_tokens": raw_result.prompt_tokens,
+                            "completion_tokens": raw_result.completion_tokens,
+                            "total_tokens": raw_result.total_tokens,
+                        },
                     )
-                    return raw
+                    raw_result.model_used = backend_config.model
+                    raw_result.latency_ms = latency_ms
+                    return raw_result
 
                 except AIModelTimeoutError as exc:
                     last_error = exc
@@ -260,30 +293,44 @@ class AIClient:
         config: _ModelConfig,
         messages: list[dict[str, str]],
         response_model: type[T] | None,
-    ) -> T | str:
+    ) -> AIResult:
         response_format = None
         if response_model is not None:
-            schema = response_model.model_json_schema()
+            response_model.model_json_schema()
             response_format = {
                 "type": "json_object",
             }
 
-        raw = await _call_openai_api(config, messages, response_format)
+        raw_text, usage = await _call_openai_api(config, messages, response_format)
+
+        token_usage = usage or {}
 
         if response_model is None:
-            return raw
+            return AIResult(
+                content=raw_text,
+                prompt_tokens=token_usage.get("prompt_tokens", 0),
+                completion_tokens=token_usage.get("completion_tokens", 0),
+                total_tokens=token_usage.get("total_tokens", 0),
+            )
 
-        json_str = _extract_json_from_text(raw)
+        json_str = _extract_json_from_text(raw_text)
         try:
             parsed = json.loads(json_str)
         except json.JSONDecodeError as exc:
             raise AIModelResponseError(
-                f"Failed to parse JSON from {config.model}: {exc}. Raw: {raw[:500]}"
+                f"Failed to parse JSON from {config.model}: {exc}. Raw: {raw_text[:500]}"
             ) from exc
 
         try:
-            return response_model.model_validate(parsed)
+            validated = response_model.model_validate(parsed)
         except ValidationError as exc:
             raise AIModelResponseError(
                 f"Schema validation failed for {config.model}: {exc}. Data: {json.dumps(parsed)[:500]}"
             ) from exc
+
+        return AIResult(
+            content=validated,
+            prompt_tokens=token_usage.get("prompt_tokens", 0),
+            completion_tokens=token_usage.get("completion_tokens", 0),
+            total_tokens=token_usage.get("total_tokens", 0),
+        )
