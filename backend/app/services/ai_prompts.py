@@ -202,3 +202,112 @@ def generate_cover_letter_prompt(
             ),
         },
     ]
+
+
+def generate_interview_questions_prompt(
+    job_analysis_json: str,
+    candidate_profile_json: str,
+) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
+        {
+            "role": "user",
+            "content": (
+                "Generate a bank of interview questions for this candidate targeting this job.\n\n"
+                "JOB ANALYSIS:\n"
+                f"{wrap_user_data(job_analysis_json)}\n\n"
+                "CANDIDATE PROFILE:\n"
+                f"{wrap_user_data(candidate_profile_json)}\n\n"
+                "Respond with a JSON object matching this schema:\n"
+                "{\n"
+                '  "questions": [\n'
+                '    {"question": "Tell me about...", '
+                '"category": "company_research|technical|behavioral|culture_fit", '
+                '"difficulty": 1, '
+                '"follow_up_hints": ["hint1"]}\n'
+                "  ],\n"
+                '  "total_questions": 12\n'
+                "}\n\n"
+                "Rules:\n"
+                "- Generate exactly 12 questions\n"
+                "- 3 questions per category: company_research, technical, behavioral, culture_fit\n"
+                "- For each category, create 1 question at each difficulty level (1=basic, 2=intermediate, 3=advanced)\n"
+                "- Questions should be tailored to the specific job and candidate background\n"
+                "- Technical questions should reference actual skills from the job requirements\n"
+                "- Behavioral questions should use STAR format prompts\n"
+                "- Company research questions should reference specific company details if available\n"
+                "- Include 1-2 follow_up_hints per question to guide the candidate\n"
+                "- Do NOT fabricate company-specific details not present in the job analysis"
+            ),
+        },
+    ]
+
+
+def evaluate_answer_prompt(
+    question: str,
+    answer: str,
+    job_context: str,
+    difficulty: int,
+) -> list[dict[str, str]]:
+    difficulty_labels = {1: "basic", 2: "intermediate", 3: "advanced"}
+    return [
+        {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
+        {
+            "role": "user",
+            "content": (
+                f"Evaluate this interview answer. The question is at {difficulty_labels.get(difficulty, 'intermediate')} difficulty level.\n\n"
+                "QUESTION:\n"
+                f"{wrap_user_data(question)}\n\n"
+                "CANDIDATE ANSWER:\n"
+                f"{wrap_user_data(answer)}\n\n"
+                "JOB CONTEXT:\n"
+                f"{wrap_user_data(job_context)}\n\n"
+                "Respond with a JSON object matching this schema:\n"
+                "{\n"
+                '  "score": 7.5,\n'
+                '  "strengths": ["strength1", "strength2"],\n'
+                '  "improvements": ["improvement1"],\n'
+                '  "coaching_tip": "Specific actionable advice",\n'
+                '  "sample_answer": "A strong example answer for this question"\n'
+                "}\n\n"
+                "Scoring guide (0-10):\n"
+                "- 9-10: Exceptional answer, shows deep understanding and specific examples\n"
+                "- 7-8: Good answer, covers key points with some specificity\n"
+                "- 5-6: Adequate answer, covers basics but lacks depth or examples\n"
+                "- 3-4: Weak answer, misses key points or too vague\n"
+                "- 0-2: Poor answer, off-topic or no substantive response\n\n"
+                "Evaluation rules:\n"
+                "- Score based on difficulty level expectations (harder questions = more lenient on depth)\n"
+                "- Provide 2-3 specific strengths\n"
+                "- Provide 1-2 specific improvements\n"
+                "- coaching_tip should be one actionable sentence\n"
+                "- sample_answer should be 3-5 sentences demonstrating what a strong answer looks like"
+            ),
+        },
+    ]
+
+
+def session_summary_prompt(
+    messages_json: str,
+    scores: list[float],
+) -> list[dict[str, str]]:
+    avg_score = sum(scores) / len(scores) if scores else 0.0
+    return [
+        {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
+        {
+            "role": "user",
+            "content": (
+                "Generate an overall interview coaching session summary.\n\n"
+                f"SESSION MESSAGES:\n{wrap_user_data(messages_json)}\n\n"
+                f"INDIVIDUAL SCORES: {scores}\n"
+                f"AVERAGE SCORE: {avg_score:.1f}/10\n\n"
+                "Respond with a single paragraph (3-5 sentences) of overall feedback that:\n"
+                "- Summarizes the candidate's overall performance\n"
+                "- Highlights the strongest area\n"
+                "- Identifies the primary area for improvement\n"
+                "- Gives actionable next steps for interview preparation\n"
+                "- Is encouraging but honest about areas needing work\n\n"
+                "Return just the feedback text as a plain string, no JSON wrapping."
+            ),
+        },
+    ]

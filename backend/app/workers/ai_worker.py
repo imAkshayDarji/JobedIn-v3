@@ -151,6 +151,75 @@ async def generate_cover_letter_job(
         raise
 
 
+async def generate_interview_prep_job(
+    ctx: dict[str, Any],
+    prep_id: str,
+    user_id: str,
+    candidate_profile_id: str,
+    job_description: str,
+) -> dict[str, Any]:
+    from app.database import async_session_factory
+    from app.models.interview import InterviewPrep
+    from app.services.ai_client import AIClient
+    from app.services.ai_pipeline import AIPipeline
+    from sqlalchemy import select
+
+    pipeline = AIPipeline(
+        ai_client=AIClient(),
+    )
+
+    async def session_factory():
+        return async_session_factory()
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(InterviewPrep).where(InterviewPrep.id == prep_id))
+        prep = result.scalar_one_or_none()
+        if prep is None:
+            logger.error(f"InterviewPrep {prep_id} not found in DB")
+            return {"status": "error", "error": "InterviewPrep not found"}
+        prep.status = "generating"
+        await session.commit()
+
+    try:
+        pipeline_result = await pipeline.run_interview_prep_pipeline(
+            job_description=job_description,
+            candidate_profile_id=candidate_profile_id,
+            user_id=user_id,
+            get_session=session_factory,
+        )
+
+        questions_data = pipeline_result.get("questions", [])
+        async with async_session_factory() as session:
+            result = await session.execute(select(InterviewPrep).where(InterviewPrep.id == prep_id))
+            prep = result.scalar_one_or_none()
+            if prep:
+                prep.status = "completed"
+                prep.questions = questions_data
+                await session.commit()
+
+        logger.info(
+            "Interview prep generation complete",
+            extra={"prep_id": prep_id, "user_id": user_id, "question_count": len(questions_data)},
+        )
+        return pipeline_result
+    except Exception as exc:
+        try:
+            async with async_session_factory() as session:
+                result = await session.execute(select(InterviewPrep).where(InterviewPrep.id == prep_id))
+                prep = result.scalar_one_or_none()
+                if prep:
+                    prep.status = "failed"
+                    await session.commit()
+        except Exception as db_exc:
+            logger.error(f"Failed to mark interview prep as failed: {db_exc}")
+
+        logger.error(
+            f"Interview prep generation failed: {exc}",
+            extra={"prep_id": prep_id, "user_id": user_id},
+        )
+        raise
+
+
 async def sweep_stale_jobs(ctx: dict[str, Any]) -> None:
     from datetime import datetime, timedelta, timezone
 
@@ -181,7 +250,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [generate_resume_job, generate_cover_letter_job]
+    functions = [generate_resume_job, generate_cover_letter_job, generate_interview_prep_job]
     cron_jobs = [
         cron(
             sweep_stale_jobs,
