@@ -9,9 +9,11 @@ from app.routes.auth import router as auth_router
 from app.routes.cover_letters import router as cover_letter_router
 from app.routes.health import router as health_router
 from app.routes.interview import router as interview_router
+from app.routes.jobs import router as jobs_router
 from app.routes.onboarding import router as onboarding_router
 from app.routes.profile import router as profile_router
 from app.routes.resumes import router as resume_router
+from app.routes.settings import router as settings_router
 
 if settings.SENTRY_DSN_BACKEND:
     sentry_sdk.init(
@@ -50,3 +52,5 @@ app.include_router(profile_router)
 app.include_router(resume_router)
 app.include_router(cover_letter_router)
 app.include_router(interview_router)
+app.include_router(jobs_router)
+app.include_router(settings_router)

@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Column, JSON as SA_JSON
+from sqlalchemy import Column, DateTime, JSON as SA_JSON
 from sqlmodel import Field, Relationship
 
 from app.models.base import ExperienceLevel, TimestampModel
@@ -23,6 +24,10 @@ class CandidateProfile(TimestampModel, table=True):
     experience_level: ExperienceLevel | None = Field(default=None)
     linkedin_email: str | None = Field(default=None)
     linkedin_password_encrypted: str | None = Field(default=None)
+    linkedin_last_scraped_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     onboarding_step: int = Field(default=0)
     onboarding_completed: bool = Field(default=False)
 

@@ -1,0 +1,417 @@
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from arq import create_pool as arq_create_pool
+from arq.connections import RedisSettings
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.auth import CurrentUser, get_current_user
+from app.config import settings as app_settings
+from app.database import get_async_session
+from app.models.application import Application
+from app.models.base import ApplicationStatus, ExperienceLevel, JobSource, RemotePolicy
+from app.models.candidate import CandidateProfile
+from app.models.job import Job
+from app.schemas.jobs import (
+    JobDetailResponse,
+    JobDiscoverRequest,
+    JobDiscoverResponse,
+    JobDiscoverStatusResponse,
+    JobListItem,
+    JobListResponse,
+    SavedJobListItem,
+    SavedJobsResponse,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+def _get_redis_settings() -> RedisSettings:
+    url = app_settings.REDIS_URL
+    host = url.split("@")[-1].split(":")[0] if "@" in url else "localhost"
+    port = int(url.split(":")[-1].split("/")[0]) if ":" in url else 6379
+    database = int(url.rstrip("/").split("/")[-1]) if "/" in url else 0
+    return RedisSettings(host=host, port=port, database=database)
+
+
+async def _enqueue_linkedin_discovery_job(
+    user_id: str,
+    keywords: list[str],
+    location: str | None,
+) -> str:
+    redis = await arq_create_pool(_get_redis_settings())
+    try:
+        job = await redis.enqueue_job(
+            "linkedin_discovery_job",
+            user_id,
+            keywords,
+            location,
+        )
+        return job.job_id if job else ""
+    finally:
+        await redis.close()
+
+
+async def _resolve_profile(
+    user_id: uuid.UUID,
+    session: AsyncSession,
+    *,
+    load_target_roles: bool = False,
+) -> CandidateProfile:
+    stmt = select(CandidateProfile).where(CandidateProfile.user_id == user_id)
+    if load_target_roles:
+        stmt = stmt.options(selectinload(CandidateProfile.target_roles))
+    result = await session.execute(stmt)
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Complete your profile and onboarding first.",
+        )
+    return profile
+
+
+@router.post("/discover", response_model=JobDiscoverResponse)
+async def discover_jobs(
+    request: JobDiscoverRequest,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> JobDiscoverResponse:
+    profile = await _resolve_profile(user.id, session, load_target_roles=True)
+
+    if not profile.linkedin_email or not profile.linkedin_password_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Save LinkedIn credentials first.",
+        )
+
+    now = datetime.now(timezone.utc)
+    if profile.linkedin_last_scraped_at:
+        elapsed = now - profile.linkedin_last_scraped_at
+        cooldown = timedelta(hours=app_settings.LINKEDIN_SESSION_COOLDOWN_HOURS)
+        if elapsed < cooldown:
+            remaining = cooldown - elapsed
+            remaining_hours = remaining.total_seconds() / 3600
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cooldown active. Try again in {remaining_hours:.1f} hours.",
+            )
+
+    keywords = request.keywords
+    if not keywords:
+        target_roles = [tr.title for tr in profile.target_roles] if profile.target_roles else []
+        if not target_roles:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Set your target roles in your profile first.",
+            )
+        keywords = target_roles
+
+    try:
+        job_id = await _enqueue_linkedin_discovery_job(
+            str(user.id),
+            keywords,
+            request.location,
+        )
+    except Exception as exc:
+        logger.error(f"Failed to enqueue discovery job: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to start job discovery. Please try again.",
+        )
+
+    logger.info(
+        "job_discovery_enqueued",
+        extra={"user_id": str(user.id), "keywords": keywords, "job_id": job_id},
+    )
+
+    return JobDiscoverResponse(
+        job_id=job_id,
+        message="Discovery started",
+    )
+
+
+@router.get("/discover/status", response_model=JobDiscoverStatusResponse)
+async def get_discover_status(
+    job_id: str | None = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> JobDiscoverStatusResponse:
+    last_scraped: str | None = None
+    result = await session.execute(
+        select(CandidateProfile).where(CandidateProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if profile and profile.linkedin_last_scraped_at:
+        last_scraped = profile.linkedin_last_scraped_at.isoformat()
+
+    if not job_id:
+        return JobDiscoverStatusResponse(status="cooldown", last_scraped_at=last_scraped)
+
+    try:
+        redis = await arq_create_pool(_get_redis_settings())
+        from arq.jobs import Job as ArqJob
+
+        arq_job = ArqJob(job_id, redis=redis)
+        info = await arq_job.info()
+        await redis.close()
+
+        if info is None:
+            return JobDiscoverStatusResponse(status="unknown", last_scraped_at=last_scraped)
+
+        if info.result is not None:
+            job_status = "completed"
+        elif info.started is not None:
+            job_status = "running"
+        else:
+            job_status = "pending"
+
+    except Exception:
+        job_status = "unknown"
+
+    return JobDiscoverStatusResponse(status=job_status, last_scraped_at=last_scraped)
+
+
+def _job_list_filters(
+    source: str | None,
+    search: str | None,
+    experience_level: str | None,
+    job_type: str | None,
+    remote_policy: str | None,
+) -> list[object]:
+    clauses: list[object] = []
+    if source:
+        try:
+            clauses.append(Job.source == JobSource(source))
+        except ValueError:
+            pass
+    if search:
+        clauses.append(
+            or_(
+                Job.title.ilike(f"%{search}%"),
+                Job.company.ilike(f"%{search}%"),
+            )
+        )
+    if experience_level:
+        try:
+            clauses.append(Job.experience_level == ExperienceLevel(experience_level))
+        except ValueError:
+            pass
+    if job_type:
+        clauses.append(Job.job_type == job_type)
+    if remote_policy:
+        try:
+            clauses.append(Job.remote_policy == RemotePolicy(remote_policy))
+        except ValueError:
+            pass
+    return clauses
+
+
+@router.get("", response_model=JobListResponse)
+async def list_jobs(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    source: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    experience_level: str | None = Query(default=None),
+    job_type: str | None = Query(default=None),
+    remote_policy: str | None = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> JobListResponse:
+    clauses = _job_list_filters(source, search, experience_level, job_type, remote_policy)
+    stmt = select(Job)
+    if clauses:
+        stmt = stmt.where(and_(*clauses))
+    stmt = stmt.order_by(desc(Job.scraped_at)).limit(limit).offset(offset)
+
+    results = await session.execute(stmt)
+    jobs = results.scalars().all()
+
+    count_stmt = select(func.count()).select_from(Job)
+    if clauses:
+        count_stmt = count_stmt.where(and_(*clauses))
+
+    total_result = await session.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    return JobListResponse(
+        jobs=[
+            JobListItem(
+                id=job.id,
+                title=job.title,
+                company=job.company,
+                location=job.location,
+                source=job.source.value if isinstance(job.source, JobSource) else job.source,
+                source_url=job.source_url,
+                scraped_at=job.scraped_at,
+                created_at=job.created_at,
+            )
+            for job in jobs
+        ],
+        total=total,
+    )
+
+
+@router.get("/saved", response_model=SavedJobsResponse)
+async def list_saved_jobs(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> SavedJobsResponse:
+    stmt = (
+        select(Application, Job)
+        .join(Job, Application.job_id == Job.id)
+        .where(
+            Application.user_id == user.id,
+            Application.status == ApplicationStatus.saved,
+        )
+        .order_by(desc(Application.created_at))
+        .limit(limit)
+        .offset(offset)
+    )
+    results = await session.execute(stmt)
+    rows = results.all()
+
+    count_stmt = (
+        select(func.count())
+        .select_from(Application)
+        .where(
+            Application.user_id == user.id,
+            Application.status == ApplicationStatus.saved,
+        )
+    )
+    total_result = await session.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    return SavedJobsResponse(
+        jobs=[
+            SavedJobListItem(
+                application_id=app.id,
+                job_id=job.id,
+                title=job.title,
+                company=job.company,
+                location=job.location,
+                source=job.source.value if isinstance(job.source, JobSource) else job.source,
+                saved_at=app.created_at,
+            )
+            for app, job in rows
+        ],
+        total=total,
+    )
+
+
+@router.get("/{job_id}", response_model=JobDetailResponse)
+async def get_job(
+    job_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> JobDetailResponse:
+    result = await session.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found.",
+        )
+
+    return JobDetailResponse(
+        id=job.id,
+        source=job.source.value if isinstance(job.source, JobSource) else job.source,
+        source_url=job.source_url,
+        external_id=job.external_id,
+        title=job.title,
+        company=job.company,
+        description=job.description,
+        salary_min=job.salary_min,
+        salary_max=job.salary_max,
+        salary_currency=job.salary_currency,
+        location=job.location,
+        experience_level=job.experience_level.value if job.experience_level else None,
+        job_type=job.job_type,
+        remote_policy=job.remote_policy.value if job.remote_policy else None,
+        ats_platform=job.ats_platform,
+        apply_url=job.apply_url,
+        scraped_at=job.scraped_at,
+        created_at=job.created_at,
+    )
+
+
+@router.post("/{job_id}/save", status_code=status.HTTP_200_OK)
+async def save_job(
+    job_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    result = await session.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found.",
+        )
+
+    existing = await session.execute(
+        select(Application).where(
+            Application.user_id == user.id,
+            Application.job_id == job_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Job already saved.",
+        )
+
+    application = Application(
+        user_id=user.id,
+        job_id=job_id,
+        status=ApplicationStatus.saved,
+    )
+    session.add(application)
+    await session.commit()
+
+    logger.info(
+        "job_saved",
+        extra={"user_id": str(user.id), "job_id": str(job_id)},
+    )
+
+    return {"message": "Job saved"}
+
+
+@router.delete("/{job_id}/save", status_code=status.HTTP_200_OK)
+async def unsave_job(
+    job_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    result = await session.execute(
+        select(Application).where(
+            Application.user_id == user.id,
+            Application.job_id == job_id,
+            Application.status == ApplicationStatus.saved,
+        )
+    )
+    application = result.scalar_one_or_none()
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Saved job not found.",
+        )
+
+    await session.delete(application)
+    await session.commit()
+
+    logger.info(
+        "job_unsaved",
+        extra={"user_id": str(user.id), "job_id": str(job_id)},
+    )
+
+    return {"message": "Job unsaved"}
