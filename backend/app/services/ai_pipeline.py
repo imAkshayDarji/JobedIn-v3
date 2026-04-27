@@ -18,11 +18,13 @@ from app.services.ai_prompts import (
     analyze_job_prompt,
     ats_retry_prompt,
     gap_analysis_prompt,
+    generate_cover_letter_prompt,
     generate_resume_prompt,
     validate_ats_prompt,
 )
 from app.schemas.ai import (
     ATSResult,
+    CoverLetterContent,
     GapAnalysis,
     JobAnalysis,
     ResumeContent,
@@ -200,6 +202,78 @@ class AIPipeline:
             "gap_analysis": gap.model_dump(),
             "resume": resume.model_dump(),
             "ats_result": ats_result.model_dump(),
+        }
+
+    async def generate_cover_letter(
+        self,
+        job_analysis: JobAnalysis,
+        candidate_data: dict[str, Any],
+        tone: str = "professional",
+        context: dict[str, Any] | None = None,
+    ) -> CoverLetterContent:
+        log_ctx = {"pipeline_step": "generate_cover_letter", **(context or {})}
+        start = time.monotonic()
+        result = await self._client.call(
+            task="generate_cover_letter",
+            messages=generate_cover_letter_prompt(
+                job_analysis_json=job_analysis.model_dump_json(),
+                candidate_profile_json=json.dumps(candidate_data),
+                tone=tone,
+            ),
+            response_model=CoverLetterContent,
+            context=log_ctx,
+        )
+        latency_ms = (time.monotonic() - start) * 1000
+        logger.info("generate_cover_letter complete", extra={**log_ctx, "latency_ms": latency_ms})
+        return result
+
+    async def run_cover_letter_pipeline(
+        self,
+        job_description: str,
+        candidate_profile_id: str,
+        user_id: str,
+        tone: str = "professional",
+        get_session: Callable[[], Coroutine[Any, Any, AsyncSession]] | None = None,
+    ) -> dict[str, Any]:
+        session_factory = get_session or self._session_factory
+        if session_factory is None:
+            raise AIPipelineError("No session factory provided")
+
+        async with await session_factory() as session:
+            await self._verify_ownership(session, candidate_profile_id, user_id)
+            candidate_data = await self._load_candidate(session, candidate_profile_id)
+
+        ctx: dict[str, Any] = {
+            "job_id": None,
+            "user_id": user_id,
+            "candidate_id": candidate_profile_id,
+            "tone": tone,
+        }
+
+        try:
+            result = await asyncio.wait_for(
+                self._execute_cover_letter_pipeline(job_description, candidate_data, tone, ctx),
+                timeout=float(settings.AI_PIPELINE_TIMEOUT_SECONDS),
+            )
+        except asyncio.TimeoutError:
+            logger.error("Cover letter pipeline timed out", extra=ctx)
+            raise AIPipelineError(f"Pipeline timed out after {settings.AI_PIPELINE_TIMEOUT_SECONDS}s")
+
+        return result
+
+    async def _execute_cover_letter_pipeline(
+        self,
+        job_description: str,
+        candidate_data: dict[str, Any],
+        tone: str,
+        ctx: dict[str, Any],
+    ) -> dict[str, Any]:
+        job_analysis = await self.analyze_job(job_description, context=ctx)
+        cover_letter = await self.generate_cover_letter(job_analysis, candidate_data, tone=tone, context=ctx)
+
+        return {
+            "job_analysis": job_analysis.model_dump(),
+            "cover_letter": cover_letter.model_dump(),
         }
 
     async def _verify_ownership(

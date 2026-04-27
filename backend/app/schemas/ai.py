@@ -68,3 +68,15 @@ class ATSResult(BaseModel):
     section_checks: list[ATSSectionCheck] = Field(default_factory=list)
     missing_keywords: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+
+
+class CoverLetterParagraph(BaseModel):
+    heading: str | None = None
+    body: str
+
+
+class CoverLetterContent(BaseModel):
+    paragraphs: list[CoverLetterParagraph]
+    tone_used: str
+    keywords_addressed: list[str] = Field(default_factory=list)
+    full_text: str
