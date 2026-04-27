@@ -77,6 +77,80 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
         raise
 
 
+async def generate_cover_letter_job(
+    ctx: dict[str, Any],
+    cover_letter_id: str,
+    user_id: str,
+    candidate_profile_id: str,
+    job_description: str,
+    tone: str = "professional",
+) -> dict[str, Any]:
+    from app.database import async_session_factory
+    from app.models.cover_letter import CoverLetter
+    from app.services.ai_client import AIClient
+    from app.services.ai_pipeline import AIPipeline
+    from sqlalchemy import select
+
+    pipeline = AIPipeline(
+        ai_client=AIClient(),
+    )
+
+    async def session_factory():
+        return async_session_factory()
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(CoverLetter).where(CoverLetter.id == cover_letter_id))
+        cover_letter = result.scalar_one_or_none()
+        if cover_letter is None:
+            logger.error(f"CoverLetter {cover_letter_id} not found in DB")
+            return {"status": "error", "error": "CoverLetter not found"}
+        cover_letter.status = "generating"
+        await session.commit()
+
+    try:
+        pipeline_result = await pipeline.run_cover_letter_pipeline(
+            job_description=job_description,
+            candidate_profile_id=candidate_profile_id,
+            user_id=user_id,
+            tone=tone,
+            get_session=session_factory,
+        )
+
+        cover_letter_data = pipeline_result.get("cover_letter", {})
+        async with async_session_factory() as session:
+            result = await session.execute(select(CoverLetter).where(CoverLetter.id == cover_letter_id))
+            cover_letter = result.scalar_one_or_none()
+            if cover_letter:
+                cover_letter.status = "completed"
+                cover_letter.content_json = cover_letter_data
+                cover_letter.content = cover_letter_data.get("full_text", "")
+                cover_letter.tone = cover_letter_data.get("tone_used", tone)
+                cover_letter.ai_model_used = "glm-4-plus"
+                await session.commit()
+
+        logger.info(
+            "Cover letter generation complete",
+            extra={"cover_letter_id": cover_letter_id, "user_id": user_id, "tone": tone},
+        )
+        return pipeline_result
+    except Exception as exc:
+        try:
+            async with async_session_factory() as session:
+                result = await session.execute(select(CoverLetter).where(CoverLetter.id == cover_letter_id))
+                cover_letter = result.scalar_one_or_none()
+                if cover_letter:
+                    cover_letter.status = "failed"
+                    await session.commit()
+        except Exception as db_exc:
+            logger.error(f"Failed to mark cover letter as failed: {db_exc}")
+
+        logger.error(
+            f"Cover letter generation failed: {exc}",
+            extra={"cover_letter_id": cover_letter_id, "user_id": user_id},
+        )
+        raise
+
+
 async def sweep_stale_jobs(ctx: dict[str, Any]) -> None:
     from datetime import datetime, timedelta, timezone
 
@@ -107,7 +181,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [generate_resume_job]
+    functions = [generate_resume_job, generate_cover_letter_job]
     cron_jobs = [
         cron(
             sweep_stale_jobs,

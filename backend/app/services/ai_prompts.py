@@ -163,3 +163,42 @@ def ats_retry_prompt(
             ),
         },
     ]
+
+
+def generate_cover_letter_prompt(
+    job_analysis_json: str,
+    candidate_profile_json: str,
+    tone: str = "professional",
+) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
+        {
+            "role": "user",
+            "content": (
+                f"Generate a compelling cover letter for this candidate targeting this job. "
+                f"Use a {tone} tone.\n\n"
+                "JOB ANALYSIS:\n"
+                f"{wrap_user_data(job_analysis_json)}\n\n"
+                "CANDIDATE PROFILE:\n"
+                f"{wrap_user_data(candidate_profile_json)}\n\n"
+                "Respond with a JSON object matching this schema:\n"
+                "{\n"
+                '  "paragraphs": [\n'
+                '    {"heading": "Optional Section Heading", "body": "Paragraph text"}\n'
+                "  ],\n"
+                '  "tone_used": "professional|casual|enthusiastic",\n'
+                '  "keywords_addressed": ["keyword1", "keyword2"],\n'
+                '  "full_text": "Complete cover letter as plain text"\n'
+                "}\n\n"
+                "Rules:\n"
+                "- Open with a strong hook referencing the specific role and company\n"
+                "- Address 3-5 key requirements from the job analysis\n"
+                "- Reference specific candidate achievements and experience that match\n"
+                "- Close with genuine enthusiasm and a clear call to action\n"
+                "- Match the requested tone throughout\n"
+                "- Keep the total to 300-400 words\n"
+                "- Do NOT fabricate experience or skills the candidate does not have\n"
+                "- full_text must contain the complete letter with proper paragraph breaks"
+            ),
+        },
+    ]

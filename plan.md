@@ -10,7 +10,7 @@
 | Day 4 | Foundation | Onboarding API + Frontend Wizard | DONE | `2649829` |
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | DONE | `24eb87c` |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | `89ed778` |
-| Day 7 | AI Pipeline | Cover Letter Generation | TODO | -- |
+| Day 7 | AI Pipeline | Cover Letter Generation | DONE | -- |
 | Day 8 | AI Pipeline | Interactive Interview Coach | TODO | -- |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | TODO | -- |
@@ -352,6 +352,27 @@ Step 4: VALIDATE (ATS scoring)
 - References specific job requirements
 - `POST /api/cover-letters/generate`
 - All structured JSON outputs
+
+### Day 7 Completion Notes
+- `CoverLetter` model updated: added `status`, `content_json` (JSON), `job_description` fields; made `job_id` and `content` nullable; added composite index `(user_id, created_at DESC)`
+- Alembic migration `be0f67fcffd6` for new columns + index + nullable changes
+- `CoverLetterContent` + `CoverLetterParagraph` Pydantic schemas in `schemas/ai.py` for structured AI output
+- 7 API request/response schemas in `schemas/cover_letter.py` with tone validation (`professional|casual|enthusiastic`)
+- `generate_cover_letter_prompt()` in `ai_prompts.py`: hooks, keyword addressing, tone matching, 300-400 word target, anti-fabrication rules
+- `generate_cover_letter()` + `run_cover_letter_pipeline()` in `AIPipeline`: single AI call (no ATS loop), reuses `analyze_job()`, `_verify_ownership()`, `_load_candidate()`
+- `generate_cover_letter_job()` in `ai_worker.py` with success/failure status updates; registered in `WorkerSettings.functions`
+- 6 cover letter routes in `routes/cover_letters.py`:
+  - `POST /api/cover-letters/generate` -- job-linked or JD-linked
+  - `POST /api/cover-letters/generate-manual` -- raw JD text
+  - `GET /api/cover-letters/{id}/status` -- poll status
+  - `GET /api/cover-letters` -- paginated list with deferred column loading
+  - `GET /api/cover-letters/{id}` -- full detail with ownership check, 202 if generating
+  - `DELETE /api/cover-letters/{id}` -- delete with ownership check
+- Dedup guard: returns cached completed cover letter within 5-minute window (same user+job)
+- Router registered in `main.py`
+- 14 backend tests passing (happy paths, dedup, auth, validation, pagination, ownership)
+- Frontend: `CoverLetterCard` component, cover letter types, API client, list page, generate page with tone selector (3 radio cards), detail page with polling
+- 73 total backend tests passing, frontend builds cleanly
 
 ### Day 8: Interactive Interview Coach
 - `POST /api/interview/setup` -- generates question bank from job description
