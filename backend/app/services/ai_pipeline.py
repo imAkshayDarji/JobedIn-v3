@@ -17,15 +17,20 @@ from app.services.ai_client import (
 from app.services.ai_prompts import (
     analyze_job_prompt,
     ats_retry_prompt,
+    evaluate_answer_prompt,
     gap_analysis_prompt,
     generate_cover_letter_prompt,
+    generate_interview_questions_prompt,
     generate_resume_prompt,
+    session_summary_prompt,
     validate_ats_prompt,
 )
 from app.schemas.ai import (
     ATSResult,
+    CoachEvaluation,
     CoverLetterContent,
     GapAnalysis,
+    InterviewPrepResult,
     JobAnalysis,
     ResumeContent,
 )
@@ -387,5 +392,112 @@ class AIPipeline:
 
         return data
 
+    async def generate_interview_questions(
+        self,
+        job_analysis: JobAnalysis,
+        candidate_data: dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> InterviewPrepResult:
+        log_ctx = {"pipeline_step": "generate_interview_questions", **(context or {})}
+        start = time.monotonic()
+        result = await self._client.call(
+            task="interview_coach",
+            messages=generate_interview_questions_prompt(
+                job_analysis_json=job_analysis.model_dump_json(),
+                candidate_profile_json=json.dumps(candidate_data),
+            ),
+            response_model=InterviewPrepResult,
+            context=log_ctx,
+        )
+        latency_ms = (time.monotonic() - start) * 1000
+        logger.info("generate_interview_questions complete", extra={**log_ctx, "latency_ms": latency_ms, "question_count": result.total_questions})
+        return result
 
+    async def evaluate_interview_answer(
+        self,
+        question: str,
+        answer: str,
+        job_context: str,
+        difficulty: int,
+        context: dict[str, Any] | None = None,
+    ) -> CoachEvaluation:
+        log_ctx = {"pipeline_step": "evaluate_interview_answer", **(context or {})}
+        start = time.monotonic()
+        result = await self._client.call(
+            task="interview_coach",
+            messages=evaluate_answer_prompt(
+                question=question,
+                answer=answer,
+                job_context=job_context,
+                difficulty=difficulty,
+            ),
+            response_model=CoachEvaluation,
+            context=log_ctx,
+        )
+        latency_ms = (time.monotonic() - start) * 1000
+        logger.info("evaluate_interview_answer complete", extra={**log_ctx, "latency_ms": latency_ms, "score": result.score})
+        return result
 
+    async def generate_session_summary(
+        self,
+        messages: list[dict[str, Any]],
+        scores: list[float],
+        context: dict[str, Any] | None = None,
+    ) -> str:
+        log_ctx = {"pipeline_step": "generate_session_summary", **(context or {})}
+        start = time.monotonic()
+        result = await self._client.call(
+            task="interview_coach",
+            messages=session_summary_prompt(
+                messages_json=json.dumps(messages),
+                scores=scores,
+            ),
+            response_model=str,
+            context=log_ctx,
+        )
+        latency_ms = (time.monotonic() - start) * 1000
+        logger.info("generate_session_summary complete", extra={**log_ctx, "latency_ms": latency_ms})
+        return result
+
+    async def run_interview_prep_pipeline(
+        self,
+        user_id: str,
+        job_description: str,
+        candidate_profile_id: str,
+        get_session: Callable[[], Coroutine[Any, Any, AsyncSession]] | None = None,
+    ) -> dict[str, Any]:
+        session_factory = get_session or self._session_factory
+        if session_factory is None:
+            raise AIPipelineError("No session factory provided")
+
+        async with await session_factory() as session:
+            await self._verify_ownership(session, candidate_profile_id, user_id)
+            candidate_data = await self._load_candidate(session, candidate_profile_id)
+
+        ctx: dict[str, Any] = {"user_id": user_id, "candidate_id": candidate_profile_id}
+
+        try:
+            result = await asyncio.wait_for(
+                self._execute_interview_prep_pipeline(job_description, candidate_data, ctx),
+                timeout=float(settings.AI_PIPELINE_TIMEOUT_SECONDS),
+            )
+        except asyncio.TimeoutError:
+            logger.error("Interview prep pipeline timed out", extra=ctx)
+            raise AIPipelineError(f"Pipeline timed out after {settings.AI_PIPELINE_TIMEOUT_SECONDS}s")
+
+        return result
+
+    async def _execute_interview_prep_pipeline(
+        self,
+        job_description: str,
+        candidate_data: dict[str, Any],
+        ctx: dict[str, Any],
+    ) -> dict[str, Any]:
+        job_analysis = await self.analyze_job(job_description, context=ctx)
+        prep_result = await self.generate_interview_questions(job_analysis, candidate_data, context=ctx)
+
+        return {
+            "job_analysis": job_analysis.model_dump(),
+            "questions": [q.model_dump() for q in prep_result.questions],
+            "total_questions": prep_result.total_questions,
+        }

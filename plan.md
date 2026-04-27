@@ -11,7 +11,7 @@
 | Day 5 | AI Pipeline | AI Client Setup + Prompt Engineering | DONE | `24eb87c` |
 | Day 6 | AI Pipeline | Resume Generation Pipeline | DONE | `89ed778` |
 | Day 7 | AI Pipeline | Cover Letter Generation | DONE | `5b4922a` |
-| Day 8 | AI Pipeline | Interactive Interview Coach | TODO | -- |
+| Day 8 | AI Pipeline | Interactive Interview Coach | DONE | -- |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | TODO | -- |
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | TODO | -- |
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | TODO | -- |
@@ -373,6 +373,32 @@ Step 4: VALIDATE (ATS scoring)
 - 14 backend tests passing (happy paths, dedup, auth, validation, pagination, ownership)
 - Frontend: `CoverLetterCard` component, cover letter types, API client, list page, generate page with tone selector (3 radio cards), detail page with polling
 - 73 total backend tests passing, frontend builds cleanly
+
+### Day 8 Completion Notes
+- `InterviewPrep` model updated: added `status`, `job_description`, `job_title`, `company_name` fields; made `job_id` nullable; added composite index `(user_id, created_at DESC)`
+- `InterviewSession` model updated: added `status`, `overall_score`, `questions_answered` fields; added composite index `(user_id, created_at DESC)`
+- Alembic migration `d4e5f6a7b8c9` for new columns + indexes + nullable changes
+- `InterviewQuestion`, `InterviewPrepResult`, `CoachEvaluation`, `CoachResponse` Pydantic schemas in `schemas/ai.py`
+- 3 new prompt functions in `ai_prompts.py`: `generate_interview_questions_prompt()`, `evaluate_answer_prompt()`, `session_summary_prompt()`
+- 4 new pipeline methods in `ai_pipeline.py`: `generate_interview_questions()`, `evaluate_interview_answer()`, `generate_session_summary()`, `run_interview_prep_pipeline()`
+- 15 route schemas in `schemas/interview.py` (setup, chat, status, list, session detail)
+- 7 API endpoints in `routes/interview.py`:
+  - `POST /api/interview/setup` -- job-linked or JD-linked, enqueues ARQ job for question bank generation
+  - `GET /api/interview/preps/{id}/status` -- poll question generation status
+  - `GET /api/interview/preps` -- paginated list of interview preps
+  - `POST /api/interview/chat` -- interactive coaching turn (synchronous AI call per turn)
+  - `GET /api/interview/sessions` -- paginated list of practice sessions
+  - `GET /api/interview/sessions/{id}` -- full session detail with messages and scores
+  - `DELETE /api/interview/preps/{id}` -- delete with ownership check
+- Chat endpoint logic: validates prep completed, creates/reuses session, evaluates answers synchronously, progressive difficulty (score >= 7 bumps up, < 4 bumps down), category rotation for variety
+- Question bank: 12 questions across 4 categories (company_research, technical, behavioral, culture_fit) at 3 difficulty levels
+- `generate_interview_prep_job()` in `ai_worker.py`; registered in `WorkerSettings.functions`
+- Router registered in `main.py`
+- 16 backend tests passing (setup with job_id, setup with manual JD, validation, dedup, status polling, list preps, chat first turn, chat ownership, prep not found, prep still generating, list sessions, session detail, delete prep, delete unauthorized)
+- Frontend: `InterviewCard`, `InterviewChat`, `InterviewScoreCard`, `DifficultyIndicator` components
+- Frontend: interview types, API client, 3 pages (list with inline setup form, interactive coach with chat UI + polling, session detail review)
+- "Interview Coach" added to navigation in `AppLayout.tsx`
+- Key design decision: question bank generation is async (ARQ job), but interactive chat turns are synchronous AI calls within the route handler (~3-5s each, fast enough without streaming)
 
 ### Day 8: Interactive Interview Coach
 - `POST /api/interview/setup` -- generates question bank from job description

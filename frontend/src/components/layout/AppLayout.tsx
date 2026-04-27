@@ -41,6 +41,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navLinks = [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/resumes", label: "Resumes" },
+    { href: "/interview", label: "Interview Coach" },
   ];
 
   function isActive(href: string) {

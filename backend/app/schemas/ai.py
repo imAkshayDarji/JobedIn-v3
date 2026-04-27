@@ -80,3 +80,30 @@ class CoverLetterContent(BaseModel):
     tone_used: str
     keywords_addressed: list[str] = Field(default_factory=list)
     full_text: str
+
+
+class InterviewQuestion(BaseModel):
+    question: str
+    category: str = Field(pattern="^(company_research|technical|behavioral|culture_fit)$")
+    difficulty: int = Field(ge=1, le=3)
+    follow_up_hints: list[str] = Field(default_factory=list)
+
+
+class InterviewPrepResult(BaseModel):
+    questions: list[InterviewQuestion]
+    total_questions: int
+
+
+class CoachEvaluation(BaseModel):
+    score: float = Field(ge=0, le=10)
+    strengths: list[str]
+    improvements: list[str]
+    coaching_tip: str
+    sample_answer: str
+
+
+class CoachResponse(BaseModel):
+    evaluation: CoachEvaluation
+    next_question: InterviewQuestion | None = None
+    session_complete: bool = False
+    overall_feedback: str | None = None
