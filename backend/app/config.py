@@ -32,5 +32,20 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4o"
 
+    ENCRYPTION_KEY: str = ""
+
+    LINKEDIN_SEARCH_MAX_RESULTS: int = 25
+    LINKEDIN_DELAY_MIN_SECONDS: float = 1.0
+    LINKEDIN_DELAY_MAX_SECONDS: float = 4.0
+    LINKEDIN_SESSION_COOLDOWN_HOURS: int = 24
+
+    JSEARCH_API_KEY: str = ""
+    ADZUNA_APP_ID: str = ""
+    ADZUNA_APP_KEY: str = ""
+    REMOTIVE_API_KEY: str = ""
+    REED_API_KEY: str = ""
+
+    JOB_DISCOVERY_CRON_HOUR: int = 6
+
 
 settings = Settings()

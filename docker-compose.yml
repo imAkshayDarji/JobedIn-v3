@@ -40,6 +40,24 @@ services:
       - jobedin-network
     restart: unless-stopped
 
+  job-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    command: ["arq", "app.workers.job_worker.JobWorkerSettings"]
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - jobedin-network
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     ports:

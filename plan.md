@@ -13,7 +13,7 @@
 | Day 7 | AI Pipeline | Cover Letter Generation | DONE | `5b4922a` |
 | Day 8 | AI Pipeline | Interactive Interview Coach | DONE | `ed6d652` |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | DONE | `2e0b4fd` |
-| Day 10 | Job Discovery | LinkedIn Playwright Discovery | TODO | -- |
+| Day 10 | Job Discovery | LinkedIn Playwright Discovery | DONE | TBD |
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | TODO | -- |
 | Day 12 | Job Discovery | Matching + Scoring | TODO | -- |
 | Day 13 | Job Discovery | Job Discovery Frontend | TODO | -- |
@@ -453,6 +453,18 @@ Step 4: VALIDATE (ATS scoring)
 - One session per day maximum (timestamp guard)
 - Random delay jitter (1-4s between actions)
 
+### Day 10 Completion Notes
+- **Config / deps:** `CREDENTIAL_ENCRYPTION_KEY`, LinkedIn tuning and API placeholders in `config.py`; `rapidfuzz` in `requirements.txt` / `pyproject.toml`; `.env.example` updated.
+- **Crypto:** `backend/app/services/credential_crypto.py` (Fernet encrypt/decrypt for LinkedIn fields).
+- **LinkedIn source:** `backend/app/services/job_sources/linkedin.py` with `LinkedInDiscovery`, stealth helpers, `LinkedInSessionCooldownError` and related exceptions in `exceptions.py`.
+- **Ingestion:** `backend/app/services/job_discovery.py` — normalize LinkedIn URLs, PostgreSQL upsert, `run_linkedin_discovery`, merged scrape errors; naive UTC timestamps for `Job` columns (`scraped_at`, row `created_at`/`updated_at`) to match existing `TIMESTAMP WITHOUT TIME ZONE` schema.
+- **Worker:** `backend/app/workers/job_worker.py` (ARQ `linkedin_discovery_job`); `docker-compose.yml` service `job-worker`; `backend/Dockerfile.worker` (Python 3.12 + Playwright Chromium).
+- **APIs:** `backend/app/routes/settings.py` (LinkedIn credential save/delete/status); `backend/app/routes/jobs.py` (discover enqueue, list with filters, save/unsave); Pydantic schemas in `schemas/settings.py`, `schemas/jobs.py`; discover path eager-loads `target_roles` to avoid async lazy-load errors.
+- **App wiring:** `main.py` registers jobs + settings routers.
+- **Model / migration:** `CandidateProfile.linkedin_last_scraped_at` as timezone-aware (`DateTime(timezone=True)`); Alembic `f1a2b3c4d5e6_add_linkedin_last_scraped_at_to_candidate.py`.
+- **Tests:** `backend/tests/test_credential_crypto.py`, `test_linkedin_discovery_unit.py`, `test_job_discovery_unit.py`, `test_settings_routes.py`, `test_jobs_routes.py` — **193** backend tests passing (`pytest tests/ -o addopts=`).
+- **Ops note:** Run `alembic upgrade head` where Postgres matches app URL; full LinkedIn E2E requires Redis + `job-worker` + real credentials (manual checklist).
+
 ### Day 11: API Sources + Merge/Deduplication
 - JSearch API (covers Indeed + multiple boards)
 - Adzuna API
@@ -623,6 +635,7 @@ jobedin-v3/
 │   │   │       └── workday.py
 │   │   ├── workers/                  # arq background workers
 │   │   │   ├── ai_worker.py
+│   │   │   ├── job_worker.py         # LinkedIn discovery jobs
 │   │   │   └── apply_worker.py
 │   │   └── schemas/
 │   ├── alembic/
