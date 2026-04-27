@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel
 
+from app.models.ai_usage import AITokenUsage
 from app.models.application import Application
 from app.models.base import (
     ApplicationStatus,
@@ -23,6 +24,7 @@ from app.models.target_role import TargetRole
 
 __all__ = [
     "SQLModel",
+    "AITokenUsage",
     "ApplicationStatus",
     "ExperienceLevel",
     "JobSource",

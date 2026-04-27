@@ -1,0 +1,12 @@
+{
+  "matches": [
+    {"skill": "Python", "candidate_has": true, "match_quality": "exact"},
+    {"skill": "FastAPI", "candidate_has": true, "match_quality": "exact"},
+    {"skill": "Docker", "candidate_has": false, "match_quality": "missing"}
+  ],
+  "strengths": ["Strong Python and FastAPI experience", "3 years backend development"],
+  "gaps": ["No Docker experience", "Limited AWS exposure"],
+  "match_score": 75.0,
+  "relevant_experience_years": 3.5,
+  "summary": "Good Python/FastAPI fit, missing containerization and cloud skills"
+}

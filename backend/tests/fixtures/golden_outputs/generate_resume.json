@@ -1,0 +1,29 @@
+{
+  "sections": [
+    {
+      "title": "Summary",
+      "order": 0,
+      "bullet_points": [],
+      "content": "Experienced Python developer with 3+ years building APIs."
+    },
+    {
+      "title": "Skills",
+      "order": 1,
+      "bullet_points": [
+        {"text": "Python - 3+ years of production experience", "keywords_included": ["Python"]},
+        {"text": "FastAPI - Built multiple RESTful services", "keywords_included": ["FastAPI", "REST"]}
+      ],
+      "content": null
+    },
+    {
+      "title": "Experience",
+      "order": 2,
+      "bullet_points": [
+        {"text": "Developed microservices handling 10k+ requests/day", "keywords_included": ["API", "Python"]}
+      ],
+      "content": null
+    }
+  ],
+  "target_keywords_covered": ["Python", "FastAPI", "API", "REST"],
+  "overall_keyword_coverage": 80.0
+}

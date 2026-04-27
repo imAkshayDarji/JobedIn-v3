@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,10 +10,15 @@ from app.services.ai_client import (
     AIModelResponseError,
     AIPipelineError,
     AIPipelineExhaustedError,
+    AIResult,
     MODEL_REGISTRY,
     _extract_json_from_text,
     _get_model_for_task,
 )
+
+
+def _ai_result(content: Any = "", **kwargs) -> AIResult:
+    return AIResult(content=content, **kwargs)
 
 
 class TestModelRegistry:
@@ -68,15 +74,21 @@ class TestExtractJson:
 class TestAIClientRetry:
     @pytest.mark.asyncio
     async def test_successful_call(self):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": '{"required_skills": [{"name": "Python", "importance": "required"}], "responsibilities": [], "keywords": [], "tone": "professional", "company_values": [], "experience_level_required": null}'}}]
-        }
+        job_analysis = JobAnalysis(
+            required_skills=[SkillRequirement(name="Python", importance="required")],
+            responsibilities=[],
+            keywords=[],
+            tone="professional",
+        )
 
-        with patch("app.services.ai_client._call_openai_api", new_callable=AsyncMock) as mock_api:
-            mock_api.return_value = '{"required_skills": [{"name": "Python", "importance": "required"}], "responsibilities": [], "keywords": [], "tone": "professional", "company_values": [], "experience_level_required": null}'
-
+        with patch(
+            "app.services.ai_client._call_openai_api",
+            new_callable=AsyncMock,
+            return_value=(
+                '{"required_skills": [{"name": "Python", "importance": "required"}], "responsibilities": [], "keywords": [], "tone": "professional", "company_values": [], "experience_level_required": null}',
+                {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+            ),
+        ):
             with patch.dict(
                 "app.services.ai_client.MODEL_REGISTRY",
                 {"glm": MagicMock(model="glm-4", api_key="k1", base_url="http://glm")},
@@ -88,8 +100,12 @@ class TestAIClientRetry:
                     response_model=JobAnalysis,
                 )
 
-        assert isinstance(result, JobAnalysis)
-        assert result.required_skills[0].name == "Python"
+        assert isinstance(result, AIResult)
+        assert isinstance(result.content, JobAnalysis)
+        assert result.content.required_skills[0].name == "Python"
+        assert result.prompt_tokens == 100
+        assert result.completion_tokens == 50
+        assert result.total_tokens == 150
 
     @pytest.mark.asyncio
     async def test_auth_error_no_retry(self):
@@ -118,7 +134,7 @@ class TestAIClientRetry:
             new_callable=AsyncMock,
             side_effect=[
                 AIModelResponseError("Malformed"),
-                good_json,
+                (good_json, {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}),
             ],
         ):
             with patch.dict(
@@ -132,7 +148,8 @@ class TestAIClientRetry:
                     response_model=JobAnalysis,
                 )
 
-        assert isinstance(result, JobAnalysis)
+        assert isinstance(result, AIResult)
+        assert isinstance(result.content, JobAnalysis)
 
     @pytest.mark.asyncio
     async def test_all_retries_exhausted(self):
@@ -178,3 +195,77 @@ class TestSchemaValidation:
                 match_score=150.0,
                 summary="test",
             )
+
+
+class TestTokenExtraction:
+    @pytest.mark.asyncio
+    async def test_usage_extracted_from_response(self):
+        raw_json = '{"required_skills": [{"name": "Python", "importance": "required"}], "responsibilities": [], "keywords": [], "tone": "professional", "company_values": [], "experience_level_required": null}'
+
+        with patch(
+            "app.services.ai_client._call_openai_api",
+            new_callable=AsyncMock,
+            return_value=(
+                raw_json,
+                {"prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280},
+            ),
+        ):
+            with patch.dict(
+                "app.services.ai_client.MODEL_REGISTRY",
+                {"glm": MagicMock(model="glm-4", api_key="k1", base_url="http://glm")},
+            ):
+                client = AIClient()
+                result = await client.call(
+                    task="analyze_job",
+                    messages=[{"role": "user", "content": "test"}],
+                    response_model=JobAnalysis,
+                )
+
+        assert result.prompt_tokens == 200
+        assert result.completion_tokens == 80
+        assert result.total_tokens == 280
+
+    @pytest.mark.asyncio
+    async def test_missing_usage_defaults_to_zero(self):
+        raw_json = '{"required_skills": [{"name": "Python", "importance": "required"}], "responsibilities": [], "keywords": [], "tone": "professional", "company_values": [], "experience_level_required": null}'
+
+        with patch(
+            "app.services.ai_client._call_openai_api",
+            new_callable=AsyncMock,
+            return_value=(raw_json, None),
+        ):
+            with patch.dict(
+                "app.services.ai_client.MODEL_REGISTRY",
+                {"glm": MagicMock(model="glm-4", api_key="k1", base_url="http://glm")},
+            ):
+                client = AIClient()
+                result = await client.call(
+                    task="analyze_job",
+                    messages=[{"role": "user", "content": "test"}],
+                    response_model=JobAnalysis,
+                )
+
+        assert result.prompt_tokens == 0
+        assert result.completion_tokens == 0
+        assert result.total_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_raw_string_response(self):
+        with patch(
+            "app.services.ai_client._call_openai_api",
+            new_callable=AsyncMock,
+            return_value=("plain text response", {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70}),
+        ):
+            with patch.dict(
+                "app.services.ai_client.MODEL_REGISTRY",
+                {"glm": MagicMock(model="glm-4", api_key="k1", base_url="http://glm")},
+            ):
+                client = AIClient()
+                result = await client.call(
+                    task="analyze_job",
+                    messages=[{"role": "user", "content": "test"}],
+                )
+
+        assert isinstance(result, AIResult)
+        assert result.content == "plain text response"
+        assert result.total_tokens == 70

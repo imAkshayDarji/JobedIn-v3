@@ -11,7 +11,7 @@ from app.schemas.ai import (
     SkillMatch,
     SkillRequirement,
 )
-from app.services.ai_client import AIClient, AIPipelineError
+from app.services.ai_client import AIClient, AIResult, AIPipelineError
 from app.services.ai_pipeline import AIPipeline, MAX_ATS_RETRIES
 
 
@@ -52,13 +52,16 @@ def _make_ats_result(score: float = 85.0) -> ATSResult:
     )
 
 
+def _ai_result(content, **kwargs):
+    return AIResult(content=content, model_used="glm-4-plus", **kwargs)
+
+
 class TestPipelineSteps:
     @pytest.mark.asyncio
     async def test_analyze_job(self):
         expected = _make_job_analysis()
-
         mock_client = AsyncMock(spec=AIClient)
-        mock_client.call.return_value = expected
+        mock_client.call.return_value = _ai_result(expected, prompt_tokens=100, completion_tokens=50)
 
         pipeline = AIPipeline(ai_client=mock_client)
         result = await pipeline.analyze_job("Senior Python Developer...")
@@ -67,13 +70,17 @@ class TestPipelineSteps:
         assert result.required_skills[0].name == "Python"
         mock_client.call.assert_called_once()
 
+        usage = pipeline.get_token_usage()
+        assert usage["calls"] == 1
+        assert usage["prompt_tokens"] == 100
+
     @pytest.mark.asyncio
     async def test_gap_analysis(self):
         job_analysis = _make_job_analysis()
         expected = _make_gap_analysis()
 
         mock_client = AsyncMock(spec=AIClient)
-        mock_client.call.return_value = expected
+        mock_client.call.return_value = _ai_result(expected)
 
         pipeline = AIPipeline(ai_client=mock_client)
         result = await pipeline.gap_analysis(job_analysis, {"skills": [{"name": "Python"}]})
@@ -88,7 +95,7 @@ class TestPipelineSteps:
         expected = _make_resume()
 
         mock_client = AsyncMock(spec=AIClient)
-        mock_client.call.return_value = expected
+        mock_client.call.return_value = _ai_result(expected)
 
         pipeline = AIPipeline(ai_client=mock_client)
         result = await pipeline.generate_resume(job_analysis, gap_analysis, {"first_name": "Test"})
@@ -102,7 +109,7 @@ class TestPipelineSteps:
         expected = _make_ats_result(90.0)
 
         mock_client = AsyncMock(spec=AIClient)
-        mock_client.call.return_value = expected
+        mock_client.call.return_value = _ai_result(expected)
 
         pipeline = AIPipeline(ai_client=mock_client)
         result = await pipeline.validate_ats(resume, job_analysis)
@@ -116,10 +123,10 @@ class TestFullPipeline:
     async def test_pipeline_passes_first_time(self):
         mock_client = AsyncMock(spec=AIClient)
         mock_client.call.side_effect = [
-            _make_job_analysis(),
-            _make_gap_analysis(),
-            _make_resume(),
-            _make_ats_result(85.0),
+            _ai_result(_make_job_analysis(), prompt_tokens=100),
+            _ai_result(_make_gap_analysis(), prompt_tokens=200),
+            _ai_result(_make_resume(), prompt_tokens=300),
+            _ai_result(_make_ats_result(85.0), prompt_tokens=150),
         ]
 
         pipeline = AIPipeline(ai_client=mock_client)
@@ -136,16 +143,20 @@ class TestFullPipeline:
         assert result["ats_result"]["overall_score"] == 85.0
         assert mock_client.call.call_count == 4
 
+        usage = pipeline.get_token_usage()
+        assert usage["calls"] == 4
+        assert usage["prompt_tokens"] == 750
+
     @pytest.mark.asyncio
     async def test_pipeline_retries_on_low_ats_score(self):
         mock_client = AsyncMock(spec=AIClient)
         mock_client.call.side_effect = [
-            _make_job_analysis(),
-            _make_gap_analysis(),
-            _make_resume(),
-            _make_ats_result(60.0),
-            _make_resume(),
-            _make_ats_result(82.0),
+            _ai_result(_make_job_analysis()),
+            _ai_result(_make_gap_analysis()),
+            _ai_result(_make_resume()),
+            _ai_result(_make_ats_result(60.0)),
+            _ai_result(_make_resume()),
+            _ai_result(_make_ats_result(82.0)),
         ]
 
         pipeline = AIPipeline(ai_client=mock_client)
@@ -162,12 +173,12 @@ class TestFullPipeline:
     async def test_pipeline_max_retries(self):
         mock_client = AsyncMock(spec=AIClient)
         side_effects = [
-            _make_job_analysis(),
-            _make_gap_analysis(),
+            _ai_result(_make_job_analysis()),
+            _ai_result(_make_gap_analysis()),
         ]
         for _ in range(MAX_ATS_RETRIES + 1):
-            side_effects.append(_make_resume())
-            side_effects.append(_make_ats_result(50.0))
+            side_effects.append(_ai_result(_make_resume()))
+            side_effects.append(_ai_result(_make_ats_result(50.0)))
 
         mock_client.call.side_effect = side_effects
 
@@ -244,3 +255,30 @@ class TestTokenLimits:
 
         messages = analyze_job_prompt("")
         assert len(messages) == 2
+
+
+class TestTokenTracking:
+    @pytest.mark.asyncio
+    async def test_token_usage_accumulation(self):
+        mock_client = AsyncMock(spec=AIClient)
+        mock_client.call.side_effect = [
+            _ai_result(_make_job_analysis(), prompt_tokens=100, completion_tokens=50, total_tokens=150),
+            _ai_result(_make_gap_analysis(), prompt_tokens=200, completion_tokens=100, total_tokens=300),
+        ]
+
+        pipeline = AIPipeline(ai_client=mock_client)
+        await pipeline.analyze_job("test")
+        await pipeline.gap_analysis(_make_job_analysis(), {})
+
+        usage = pipeline.get_token_usage()
+        assert usage["calls"] == 2
+        assert usage["prompt_tokens"] == 300
+        assert usage["completion_tokens"] == 150
+        assert usage["total_tokens"] == 450
+
+    @pytest.mark.asyncio
+    async def test_empty_token_usage(self):
+        pipeline = AIPipeline(ai_client=AsyncMock(spec=AIClient))
+        usage = pipeline.get_token_usage()
+        assert usage["calls"] == 0
+        assert usage["prompt_tokens"] == 0
