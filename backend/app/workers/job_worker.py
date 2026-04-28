@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -55,6 +56,50 @@ async def linkedin_discovery_job(
             raise
 
 
+async def api_discovery_job(
+    ctx: dict[str, Any],
+    keywords: list[str],
+    location: str | None = None,
+    sources: list[str] | None = None,
+) -> dict[str, Any]:
+    from app.database import async_session_factory
+    from app.models.discovery_log import DiscoveryLog
+    from app.services.job_discovery import JobDiscoveryService
+
+    start = time.monotonic()
+
+    async with async_session_factory() as session:
+        service = JobDiscoveryService(session)
+
+        try:
+            result = await service.run_api_discovery(
+                keywords=keywords,
+                location=location,
+                sources=sources,
+            )
+        except Exception as exc:
+            logger.error(f"API discovery failed: {exc}", exc_info=True)
+            result = IngestResult(errors=[str(exc)])
+
+        duration = time.monotonic() - start
+
+        log_entry = DiscoveryLog(
+            sources=sources or [],
+            keywords=keywords,
+            location=location,
+            total_found=result.total_found,
+            new_count=result.new_count,
+            updated_count=result.updated_count,
+            skipped_count=result.skipped_count,
+            errors=result.errors or None,
+            duration_seconds=round(duration, 2),
+        )
+        session.add(log_entry)
+        await session.commit()
+
+        return result.model_dump()
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     logger.info("Job worker starting")
 
@@ -64,7 +109,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class JobWorkerSettings:
-    functions = [linkedin_discovery_job]
+    functions = [linkedin_discovery_job, api_discovery_job]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings(

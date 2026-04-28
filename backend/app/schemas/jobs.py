@@ -3,10 +3,23 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from app.models.base import JobSource
+
+VALID_SOURCE_NAMES = {s.value for s in JobSource}
+
 
 class JobDiscoverRequest(BaseModel):
     keywords: list[str] | None = None
     location: str | None = None
+    sources: list[str] | None = None
+
+    def validated_sources(self) -> list[str] | None:
+        if self.sources is None:
+            return None
+        invalid = [s for s in self.sources if s not in VALID_SOURCE_NAMES]
+        if invalid:
+            raise ValueError(f"Invalid sources: {', '.join(invalid)}. Valid: {', '.join(sorted(VALID_SOURCE_NAMES))}")
+        return self.sources
 
 
 class JobDiscoverResponse(BaseModel):
@@ -14,9 +27,26 @@ class JobDiscoverResponse(BaseModel):
     message: str
 
 
+class MultiSourceDiscoverResponse(BaseModel):
+    job_id: str
+    message: str
+    sources: list[str]
+
+
 class JobDiscoverStatusResponse(BaseModel):
     status: str
     last_scraped_at: str | None = None
+
+
+class SourceStatusItem(BaseModel):
+    name: str
+    type: str
+    available: bool
+    detail: str | None = None
+
+
+class SourcesStatusResponse(BaseModel):
+    sources: list[SourceStatusItem]
 
 
 class JobListItem(BaseModel):
@@ -54,6 +84,7 @@ class JobDetailResponse(BaseModel):
     apply_url: str | None = None
     scraped_at: datetime.datetime | None = None
     created_at: datetime.datetime | None = None
+    alternate_sources: list[dict] | None = None
 
 
 class SavedJobListItem(BaseModel):

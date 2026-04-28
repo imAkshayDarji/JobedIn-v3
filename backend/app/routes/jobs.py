@@ -23,8 +23,11 @@ from app.schemas.jobs import (
     JobDiscoverStatusResponse,
     JobListItem,
     JobListResponse,
+    MultiSourceDiscoverResponse,
     SavedJobListItem,
     SavedJobsResponse,
+    SourceStatusItem,
+    SourcesStatusResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +61,24 @@ async def _enqueue_linkedin_discovery_job(
         await redis.close()
 
 
+async def _enqueue_api_discovery_job(
+    keywords: list[str],
+    location: str | None,
+    sources: list[str],
+) -> str:
+    redis = await arq_create_pool(_get_redis_settings())
+    try:
+        job = await redis.enqueue_job(
+            "api_discovery_job",
+            keywords,
+            location,
+            sources,
+        )
+        return job.job_id if job else ""
+    finally:
+        await redis.close()
+
+
 async def _resolve_profile(
     user_id: uuid.UUID,
     session: AsyncSession,
@@ -85,23 +106,38 @@ async def discover_jobs(
 ) -> JobDiscoverResponse:
     profile = await _resolve_profile(user.id, session, load_target_roles=True)
 
-    if not profile.linkedin_email or not profile.linkedin_password_encrypted:
+    try:
+        requested_sources = request.validated_sources()
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Save LinkedIn credentials first.",
+            detail=str(exc),
         )
 
-    now = datetime.now(timezone.utc)
-    if profile.linkedin_last_scraped_at:
-        elapsed = now - profile.linkedin_last_scraped_at
-        cooldown = timedelta(hours=app_settings.LINKEDIN_SESSION_COOLDOWN_HOURS)
-        if elapsed < cooldown:
-            remaining = cooldown - elapsed
-            remaining_hours = remaining.total_seconds() / 3600
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cooldown active. Try again in {remaining_hours:.1f} hours.",
-            )
+    needs_linkedin = requested_sources is None or "linkedin" in requested_sources
+    api_sources = [s for s in (requested_sources or []) if s != "linkedin"] if requested_sources else []
+
+    if needs_linkedin:
+        if not profile.linkedin_email or not profile.linkedin_password_encrypted:
+            if requested_sources is not None and len(requested_sources) == 1 and requested_sources[0] == "linkedin":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Save LinkedIn credentials first.",
+                )
+            needs_linkedin = False
+
+    if needs_linkedin:
+        now = datetime.now(timezone.utc)
+        if profile.linkedin_last_scraped_at:
+            elapsed = now - profile.linkedin_last_scraped_at
+            cooldown = timedelta(hours=app_settings.LINKEDIN_SESSION_COOLDOWN_HOURS)
+            if elapsed < cooldown:
+                remaining = cooldown - elapsed
+                remaining_hours = remaining.total_seconds() / 3600
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cooldown active. Try again in {remaining_hours:.1f} hours.",
+                )
 
     keywords = request.keywords
     if not keywords:
@@ -114,11 +150,25 @@ async def discover_jobs(
         keywords = target_roles
 
     try:
-        job_id = await _enqueue_linkedin_discovery_job(
-            str(user.id),
-            keywords,
-            request.location,
-        )
+        if needs_linkedin:
+            job_id = await _enqueue_linkedin_discovery_job(
+                str(user.id),
+                keywords,
+                request.location,
+            )
+        elif api_sources:
+            job_id = await _enqueue_api_discovery_job(
+                keywords,
+                request.location,
+                api_sources,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No discovery sources available. Configure LinkedIn credentials or specify API sources.",
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Failed to enqueue discovery job: {exc}")
         raise HTTPException(
@@ -176,6 +226,52 @@ async def get_discover_status(
         job_status = "unknown"
 
     return JobDiscoverStatusResponse(status=job_status, last_scraped_at=last_scraped)
+
+
+@router.get("/sources/status", response_model=SourcesStatusResponse)
+async def get_sources_status(
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> SourcesStatusResponse:
+    profile_result = await session.execute(
+        select(CandidateProfile).where(CandidateProfile.user_id == user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    has_linkedin = bool(profile and profile.linkedin_email and profile.linkedin_password_encrypted)
+
+    from app.services.job_sources import ADAPTER_REGISTRY
+
+    sources: list[SourceStatusItem] = [
+        SourceStatusItem(
+            name="linkedin",
+            type="scrape",
+            available=has_linkedin,
+            detail="Requires saved LinkedIn credentials" if not has_linkedin else None,
+        ),
+    ]
+
+    for name, adapter_cls in ADAPTER_REGISTRY.items():
+        adapter = adapter_cls()
+        headers = adapter.build_headers()
+        params = adapter.build_params("test", None) or {}
+        has_key = bool(
+            headers and any(v for v in headers.values())
+        ) or bool(
+            params and any(
+                k.endswith("_key") or k.endswith("_id") or k == "api_key"
+                for k, v in params.items() if v
+            )
+        )
+
+        sources.append(SourceStatusItem(
+            name=name,
+            type="api",
+            available=has_key,
+            detail=f"Requires {name.capitalize()} API key" if not has_key else None,
+        ))
+
+    return SourcesStatusResponse(sources=sources)
 
 
 def _job_list_filters(
@@ -341,6 +437,7 @@ async def get_job(
         apply_url=job.apply_url,
         scraped_at=job.scraped_at,
         created_at=job.created_at,
+        alternate_sources=job.alternate_sources,
     )
 
 
