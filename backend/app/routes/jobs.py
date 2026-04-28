@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +16,7 @@ from app.models.application import Application
 from app.models.base import ApplicationStatus, ExperienceLevel, JobSource, RemotePolicy
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
+from app.models.job_match import JobMatch
 from app.schemas.jobs import (
     JobDetailResponse,
     JobDiscoverRequest,
@@ -29,8 +30,18 @@ from app.schemas.jobs import (
     SourceStatusItem,
     SourcesStatusResponse,
 )
+from app.schemas.match import (
+    JobScoreResponse,
+    MatchBreakdown,
+    MatchRequest,
+    MatchResponse,
+    MatchStatusResponse,
+)
+from app.services.match_scorer import MatchScorer
 
 logger = logging.getLogger(__name__)
+
+VALID_SORT_FIELDS = {"match_score", "created_at", "salary_max"}
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -96,6 +107,15 @@ async def _resolve_profile(
             detail="Complete your profile and onboarding first.",
         )
     return profile
+
+
+async def _enqueue_match_job(user_id: str) -> str:
+    redis = await arq_create_pool(_get_redis_settings())
+    try:
+        job = await redis.enqueue_job("match_jobs_job", user_id)
+        return job.job_id if job else ""
+    finally:
+        await redis.close()
 
 
 @router.post("/discover", response_model=JobDiscoverResponse)
@@ -318,17 +338,36 @@ async def list_jobs(
     experience_level: str | None = Query(default=None),
     job_type: str | None = Query(default=None),
     remote_policy: str | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> JobListResponse:
+    if sort_by not in VALID_SORT_FIELDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid sort field. Allowed: {', '.join(sorted(VALID_SORT_FIELDS))}",
+        )
+
     clauses = _job_list_filters(source, search, experience_level, job_type, remote_policy)
-    stmt = select(Job)
+
+    stmt = select(Job, JobMatch.match_score).outerjoin(
+        JobMatch,
+        and_(JobMatch.job_id == Job.id, JobMatch.user_id == user.id),
+    )
     if clauses:
         stmt = stmt.where(and_(*clauses))
-    stmt = stmt.order_by(desc(Job.scraped_at)).limit(limit).offset(offset)
+
+    if sort_by == "match_score":
+        stmt = stmt.order_by(JobMatch.match_score.desc().nulls_last())
+    elif sort_by == "salary_max":
+        stmt = stmt.order_by(Job.salary_max.desc().nulls_last())
+    else:
+        stmt = stmt.order_by(desc(Job.created_at))
+
+    stmt = stmt.limit(limit).offset(offset)
 
     results = await session.execute(stmt)
-    jobs = results.scalars().all()
+    rows = results.all()
 
     count_stmt = select(func.count()).select_from(Job)
     if clauses:
@@ -346,10 +385,16 @@ async def list_jobs(
                 location=job.location,
                 source=job.source.value if isinstance(job.source, JobSource) else job.source,
                 source_url=job.source_url,
+                salary_min=job.salary_min,
+                salary_max=job.salary_max,
+                experience_level=job.experience_level.value if job.experience_level else None,
+                job_type=job.job_type,
+                remote_policy=job.remote_policy.value if job.remote_policy else None,
                 scraped_at=job.scraped_at,
                 created_at=job.created_at,
+                match_score=match_score,
             )
-            for job in jobs
+            for job, match_score in rows
         ],
         total=total,
     )
@@ -404,6 +449,121 @@ async def list_saved_jobs(
     )
 
 
+@router.post("/match", response_model=MatchResponse)
+async def match_jobs(
+    request: MatchRequest,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> MatchResponse:
+    await _resolve_profile(user.id, session)
+
+    try:
+        task_id = await _enqueue_match_job(str(user.id))
+    except Exception as exc:
+        logger.error(f"Failed to enqueue match job: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to start job matching. Please try again.",
+        )
+
+    logger.info(
+        "match_job_enqueued",
+        extra={"user_id": str(user.id), "task_id": task_id},
+    )
+
+    return MatchResponse(task_id=task_id, message="Matching started")
+
+
+@router.get("/match/status", response_model=MatchStatusResponse)
+async def get_match_status(
+    task_id: str | None = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> MatchStatusResponse:
+    if not task_id:
+        total_result = await session.execute(select(func.count()).select_from(JobMatch).where(JobMatch.user_id == user.id))
+        scored_count = total_result.scalar() or 0
+        return MatchStatusResponse(status="unknown", scored_count=scored_count, total_count=0)
+
+    try:
+        redis = await arq_create_pool(_get_redis_settings())
+        from arq.jobs import Job as ArqJob
+
+        arq_job = ArqJob(task_id, redis=redis)
+        info = await arq_job.info()
+        await redis.close()
+
+        if info is None:
+            return MatchStatusResponse(status="unknown", scored_count=0, total_count=0)
+
+        if info.result is not None:
+            job_status = "completed"
+        elif info.started is not None:
+            job_status = "in_progress"
+        else:
+            job_status = "pending"
+
+    except Exception:
+        job_status = "unknown"
+
+    total_result = await session.execute(select(func.count()).select_from(JobMatch).where(JobMatch.user_id == user.id))
+    scored_count = total_result.scalar() or 0
+
+    return MatchStatusResponse(status=job_status, scored_count=scored_count, total_count=0)
+
+
+@router.get("/{job_id}/score", response_model=JobScoreResponse)
+async def get_job_score(
+    job_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> JobScoreResponse:
+    result = await session.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found.",
+        )
+
+    scorer = MatchScorer(session)
+    cached = await scorer.get_cached_score(user.id, job_id)
+
+    if cached is not None:
+        return JobScoreResponse(
+            job_id=cached.job_id,
+            match_score=cached.match_score,
+            breakdown=MatchBreakdown(
+                skills_score=cached.skills_score,
+                experience_score=cached.experience_score,
+                role_relevance_score=cached.role_relevance_score,
+                location_score=cached.location_score,
+            ),
+            matched_skills=cached.matched_skills,
+            missing_skills=cached.missing_skills,
+        )
+
+    match_result = await scorer.score_job(user.id, job_id)
+    if match_result is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Complete your profile and onboarding first.",
+        )
+
+    return JobScoreResponse(
+        job_id=match_result.job_id,
+        match_score=match_result.match_score,
+        breakdown=MatchBreakdown(
+            skills_score=match_result.skills_score,
+            experience_score=match_result.experience_score,
+            role_relevance_score=match_result.role_relevance_score,
+            location_score=match_result.location_score,
+        ),
+        matched_skills=match_result.matched_skills,
+        missing_skills=match_result.missing_skills,
+    )
+
+
 @router.get("/{job_id}", response_model=JobDetailResponse)
 async def get_job(
     job_id: uuid.UUID,
@@ -417,6 +577,24 @@ async def get_job(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found.",
         )
+
+    match_score: float | None = None
+    match_breakdown = None
+
+    match_result = await session.execute(
+        select(JobMatch).where(
+            and_(JobMatch.user_id == user.id, JobMatch.job_id == job_id)
+        )
+    )
+    cached = match_result.scalar_one_or_none()
+    if cached:
+        match_score = cached.match_score
+        match_breakdown = {
+            "skills_score": cached.skills_score,
+            "experience_score": cached.experience_score,
+            "role_relevance_score": cached.role_relevance_score,
+            "location_score": cached.location_score,
+        }
 
     return JobDetailResponse(
         id=job.id,
@@ -438,6 +616,8 @@ async def get_job(
         scraped_at=job.scraped_at,
         created_at=job.created_at,
         alternate_sources=job.alternate_sources,
+        match_score=match_score,
+        match_breakdown=match_breakdown,
     )
 
 

@@ -78,13 +78,14 @@ export default function DashboardPage() {
               </p>
             </div>
           </Link>
-          <div className="rounded-lg border border-gray-200 bg-white p-6 opacity-60">
-            <h3 className="font-semibold text-gray-900">Jobs</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Browse AI-matched opportunities
-            </p>
-            <p className="mt-2 text-xs text-gray-400">Coming soon</p>
-          </div>
+          <Link href="/jobs" className="block">
+            <div className="rounded-lg border border-gray-200 bg-white p-6 hover:border-blue-300 hover:shadow-sm transition-all">
+              <h3 className="font-semibold text-gray-900">Jobs</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Browse AI-matched opportunities
+              </p>
+            </div>
+          </Link>
           <div className="rounded-lg border border-gray-200 bg-white p-6 opacity-60">
             <h3 className="font-semibold text-gray-900">Applications</h3>
             <p className="mt-1 text-sm text-gray-500">

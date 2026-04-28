@@ -47,5 +47,8 @@ class Settings(BaseSettings):
 
     JOB_DISCOVERY_CRON_HOUR: int = 6
 
+    MATCH_SCORE_STALENESS_HOURS: int = 24
+    MATCH_SCORE_CHUNK_SIZE: int = 100
+
 
 settings = Settings()

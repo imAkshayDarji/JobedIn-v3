@@ -34,6 +34,14 @@ async def linkedin_discovery_job(
                 keywords=keywords,
                 location=location,
             )
+
+            if result.new_count > 0:
+                try:
+                    redis = await ctx["redis"]
+                    await redis.enqueue_job("match_jobs_job", user_id)
+                except Exception:
+                    logger.warning(f"Failed to enqueue match job for user {user_id}")
+
             return result.model_dump()
 
         except LinkedInCAPTCHAError as exc:
@@ -100,6 +108,32 @@ async def api_discovery_job(
         return result.model_dump()
 
 
+async def match_jobs_job(
+    ctx: dict[str, Any],
+    user_id: str,
+) -> dict[str, Any]:
+    from app.database import async_session_factory
+    from app.services.match_scorer import MatchScorer
+
+    async with async_session_factory() as session:
+        scorer = MatchScorer(session)
+
+        try:
+            results = await scorer.score_jobs_batch(
+                user_id=uuid.UUID(user_id),
+            )
+            return {
+                "user_id": user_id,
+                "scored_count": len(results),
+                "avg_score": round(
+                    sum(r.match_score for r in results) / len(results), 2
+                ) if results else 0.0,
+            }
+        except Exception as exc:
+            logger.error(f"Match scoring failed for user {user_id}: {exc}", exc_info=True)
+            raise
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     logger.info("Job worker starting")
 
@@ -109,7 +143,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class JobWorkerSettings:
-    functions = [linkedin_discovery_job, api_discovery_job]
+    functions = [linkedin_discovery_job, api_discovery_job, match_jobs_job]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings(
