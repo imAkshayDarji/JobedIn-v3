@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy import Column, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSON
 from sqlmodel import Field
 
 from app.models.base import ExperienceLevel, JobSource, RemotePolicy, TimestampModel
@@ -35,3 +36,4 @@ class Job(TimestampModel, table=True):
     ats_platform: str | None = Field(default=None)
     apply_url: str | None = Field(default=None)
     scraped_at: datetime | None = Field(default=None)
+    alternate_sources: list | None = Field(default=None, sa_column=Column(JSON, nullable=True))

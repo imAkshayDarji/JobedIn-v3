@@ -86,6 +86,60 @@ class TestNormalizeJob:
         assert result is not None
         assert result["scraped_at"] is not None
 
+    def test_passes_through_description(self) -> None:
+        raw = {
+            "title": "dev",
+            "company": "acme",
+            "source_url": "https://example.com",
+            "external_id": "abc",
+            "description": "A great job",
+        }
+        result = JobDiscoveryService.normalize_job(raw, JobSource.adzuna)
+        assert result is not None
+        assert result["description"] == "A great job"
+
+    def test_passes_through_salary(self) -> None:
+        raw = {
+            "title": "dev",
+            "company": "acme",
+            "source_url": "https://example.com",
+            "external_id": "abc",
+            "salary_min": 50000,
+            "salary_max": 80000,
+            "salary_currency": "GBP",
+        }
+        result = JobDiscoveryService.normalize_job(raw, JobSource.reed)
+        assert result is not None
+        assert result["salary_min"] == 50000
+        assert result["salary_max"] == 80000
+        assert result["salary_currency"] == "GBP"
+
+    def test_passes_through_job_type_and_remote_policy(self) -> None:
+        raw = {
+            "title": "dev",
+            "company": "acme",
+            "source_url": "https://example.com",
+            "external_id": "abc",
+            "job_type": "full_time",
+            "remote_policy": "remote",
+        }
+        result = JobDiscoveryService.normalize_job(raw, JobSource.remotive)
+        assert result is not None
+        assert result["job_type"] == "full_time"
+        assert result["remote_policy"] == "remote"
+
+    def test_passes_through_alternate_sources(self) -> None:
+        raw = {
+            "title": "dev",
+            "company": "acme",
+            "source_url": "https://example.com",
+            "external_id": "abc",
+            "alternate_sources": [{"source": "jsearch", "external_id": "xyz"}],
+        }
+        result = JobDiscoveryService.normalize_job(raw, JobSource.adzuna)
+        assert result is not None
+        assert len(result["alternate_sources"]) == 1
+
 
 class TestNormalizeLinkedInUrl:
     def test_view_url(self) -> None:

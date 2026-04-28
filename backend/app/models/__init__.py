@@ -12,6 +12,7 @@ from app.models.base import (
 from app.models.candidate import CandidateProfile
 from app.models.certification import Certification
 from app.models.cover_letter import CoverLetter
+from app.models.discovery_log import DiscoveryLog
 from app.models.education import Education
 from app.models.experience import Experience
 from app.models.interview import InterviewPrep, InterviewSession
@@ -34,6 +35,7 @@ __all__ = [
     "CandidateProfile",
     "Certification",
     "CoverLetter",
+    "DiscoveryLog",
     "Education",
     "Experience",
     "InterviewPrep",
