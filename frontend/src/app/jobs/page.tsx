@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { JobCard } from "@/components/features/JobCard";
-import { listJobs, matchJobs, getMatchStatus, discoverJobs, getDiscoverStatus } from "@/lib/api/jobs";
-import type { JobListItem } from "@/types/job";
+import {
+  listJobs,
+  matchJobs,
+  getMatchStatus,
+  discoverJobs,
+  getDiscoverStatus,
+  getSourcesStatus,
+} from "@/lib/api/jobs";
+import type { JobListItem, SourceStatus } from "@/types/job";
 
 type SortOption = "match_score" | "created_at" | "salary_max";
 
@@ -12,28 +19,131 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("match_score");
   const [source, setSource] = useState<string>("");
+  const [experienceLevel, setExperienceLevel] = useState<string>("");
+  const [jobType, setJobType] = useState<string>("");
+  const [remotePolicy, setRemotePolicy] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  const [searchInput, setSearchInput] = useState<string>("");
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [matchStatus, setMatchStatus] = useState<string | null>(null);
   const [matchTaskId, setMatchTaskId] = useState<string | null>(null);
   const [discoverStatus, setDiscoverStatus] = useState<string | null>(null);
+  const [sourceStatuses, setSourceStatuses] = useState<SourceStatus[]>([]);
+
+  const matchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const PAGE_SIZE = 20;
 
   useEffect(() => {
-    loadJobs();
-  }, [sortBy, source]);
+    loadSourcesStatus();
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
-  async function loadJobs() {
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearch(searchInput);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchInput]);
+
+  useEffect(() => {
+    setOffset(0);
+    loadJobs(true);
+  }, [sortBy, source, experienceLevel, jobType, remotePolicy, search]);
+
+  useEffect(() => {
+    if (offset > 0) {
+      loadJobs(false);
+    }
+  }, [offset]);
+
+  useEffect(() => {
+    return () => {
+      if (matchIntervalRef.current) clearInterval(matchIntervalRef.current);
+      if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
+    };
+  }, []);
+
+  async function loadSourcesStatus() {
     try {
-      const response = await listJobs(20, 0, sortBy, source || undefined);
-      setJobs(response.jobs);
-      setTotal(response.total);
+      const response = await getSourcesStatus();
+      setSourceStatuses(response.sources);
     } catch {
-      setJobs([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
+      // Fail silently
     }
   }
+
+  async function loadJobs(reset: boolean) {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    if (reset) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+    setError(false);
+    setErrorMessage("");
+
+    try {
+      const currentOffset = reset ? 0 : offset;
+      const response = await listJobs(
+        PAGE_SIZE,
+        currentOffset,
+        sortBy,
+        source || undefined,
+        experienceLevel || undefined,
+        search || undefined,
+        jobType || undefined,
+        remotePolicy || undefined,
+      );
+      if (controller.signal.aborted) return;
+
+      if (reset) {
+        setJobs(response.jobs);
+      } else {
+        setJobs((prev) => [...prev, ...response.jobs]);
+      }
+      setTotal(response.total);
+    } catch {
+      if (controller.signal.aborted) return;
+      setError(true);
+      setErrorMessage("Failed to load jobs. Please try again.");
+      if (reset) {
+        setJobs([]);
+        setTotal(0);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }
+
+  function handleLoadMore() {
+    setOffset((prev) => prev + PAGE_SIZE);
+  }
+
+  const handleRetry = useCallback(() => {
+    loadJobs(true);
+  }, [sortBy, source, experienceLevel, jobType, remotePolicy, search]);
 
   async function handleMatchJobs() {
     try {
@@ -46,19 +156,22 @@ export default function JobsPage() {
     }
   }
 
-  async function pollMatchStatus(taskId: string) {
-    const interval = setInterval(async () => {
+  function pollMatchStatus(taskId: string) {
+    if (matchIntervalRef.current) clearInterval(matchIntervalRef.current);
+    matchIntervalRef.current = setInterval(async () => {
       try {
         const status = await getMatchStatus(taskId);
         setMatchStatus(status.status);
         if (status.status === "completed" || status.status === "failed" || status.status === "unknown") {
-          clearInterval(interval);
+          if (matchIntervalRef.current) clearInterval(matchIntervalRef.current);
+          matchIntervalRef.current = null;
           if (status.status === "completed") {
-            loadJobs();
+            loadJobs(true);
           }
         }
       } catch {
-        clearInterval(interval);
+        if (matchIntervalRef.current) clearInterval(matchIntervalRef.current);
+        matchIntervalRef.current = null;
         setMatchStatus(null);
       }
     }, 2000);
@@ -74,24 +187,31 @@ export default function JobsPage() {
     }
   }
 
-  async function pollDiscoverStatus(jobId: string) {
-    const interval = setInterval(async () => {
+  function pollDiscoverStatus(jobId: string) {
+    if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
+    discoverIntervalRef.current = setInterval(async () => {
       try {
         const status = await getDiscoverStatus(jobId);
         if (status.status === "completed" || status.status === "failed" || status.status === "unknown") {
-          clearInterval(interval);
+          if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
+          discoverIntervalRef.current = null;
           setDiscoverStatus(status.status === "completed" ? "completed" : null);
           if (status.status === "completed") {
             handleMatchJobs();
-            loadJobs();
+            loadJobs(true);
           }
         }
       } catch {
-        clearInterval(interval);
+        if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
+        discoverIntervalRef.current = null;
         setDiscoverStatus(null);
       }
     }, 3000);
   }
+
+  const linkedinStatus = sourceStatuses.find((s) => s.name === "linkedin");
+  const remaining = total - jobs.length;
+  const isMatchBusy = matchStatus === "pending" || matchStatus === "in_progress";
 
   return (
     <AppLayout>
@@ -106,22 +226,55 @@ export default function JobsPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={handleMatchJobs}
-              disabled={matchStatus === "pending" || matchStatus === "in_progress"}
+              disabled={isMatchBusy}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {matchStatus === "pending" || matchStatus === "in_progress" ? "Matching..." : "Score Jobs"}
+              {isMatchBusy ? "Matching..." : "Score Jobs"}
             </button>
-            <button
-              onClick={handleDiscover}
-              disabled={discoverStatus === "pending"}
-              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {discoverStatus === "pending" ? "Discovering..." : "Discover Jobs"}
-            </button>
+            <div className="flex flex-col items-end">
+              <button
+                onClick={handleDiscover}
+                disabled={discoverStatus === "pending"}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {discoverStatus === "pending" ? "Discovering..." : "Discover Jobs"}
+              </button>
+              {linkedinStatus && !linkedinStatus.available && (
+                <span className="text-[11px] text-gray-400 mt-1">
+                  LinkedIn: credentials required
+                </span>
+              )}
+              {linkedinStatus && linkedinStatus.available && (
+                <span className="text-[11px] text-green-500 mt-1">
+                  LinkedIn: ready
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 mb-6">
+        {error && (
+          <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-4 flex items-center justify-between">
+            <p className="text-sm text-red-700">{errorMessage}</p>
+            <button
+              onClick={handleRetry}
+              className="rounded-md bg-red-100 px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-200"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search jobs..."
+            maxLength={200}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 placeholder-gray-400 w-56"
+          />
+
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -143,6 +296,44 @@ export default function JobsPage() {
             <option value="adzuna">Adzuna</option>
             <option value="remotive">Remotive</option>
             <option value="reed">Reed</option>
+          </select>
+
+          <select
+            value={experienceLevel}
+            onChange={(e) => setExperienceLevel(e.target.value)}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+          >
+            <option value="">All Experience</option>
+            <option value="student">Student</option>
+            <option value="fresher">Fresher</option>
+            <option value="junior">Junior</option>
+            <option value="mid">Mid</option>
+            <option value="senior">Senior</option>
+            <option value="lead">Lead</option>
+            <option value="executive">Executive</option>
+          </select>
+
+          <select
+            value={jobType}
+            onChange={(e) => setJobType(e.target.value)}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+          >
+            <option value="">All Job Types</option>
+            <option value="full-time">Full-time</option>
+            <option value="part-time">Part-time</option>
+            <option value="contract">Contract</option>
+            <option value="internship">Internship</option>
+          </select>
+
+          <select
+            value={remotePolicy}
+            onChange={(e) => setRemotePolicy(e.target.value)}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+          >
+            <option value="">All Remote Policies</option>
+            <option value="remote">Remote</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="onsite">On-site</option>
           </select>
         </div>
 
@@ -170,11 +361,24 @@ export default function JobsPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {jobs.map((job) => (
-              <JobCard key={job.id} job={job} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {jobs.map((job) => (
+                <JobCard key={job.id} job={job} isSaved={job.is_saved} />
+              ))}
+            </div>
+            {remaining > 0 && (
+              <div className="mt-6 text-center">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="rounded-md border border-gray-300 bg-white px-6 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingMore ? "Loading..." : `Load More (${remaining} remaining)`}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </AppLayout>

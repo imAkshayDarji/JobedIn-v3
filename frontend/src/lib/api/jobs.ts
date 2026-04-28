@@ -17,6 +17,9 @@ export async function listJobs(
   sortBy: string = "created_at",
   source?: string,
   experienceLevel?: string,
+  search?: string,
+  jobType?: string,
+  remotePolicy?: string,
 ): Promise<JobListResponse> {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -25,6 +28,9 @@ export async function listJobs(
   });
   if (source) params.set("source", source);
   if (experienceLevel) params.set("experience_level", experienceLevel);
+  if (search) params.set("search", search);
+  if (jobType) params.set("job_type", jobType);
+  if (remotePolicy) params.set("remote_policy", remotePolicy);
   return api.get<JobListResponse>(`/api/jobs?${params.toString()}`);
 }
 

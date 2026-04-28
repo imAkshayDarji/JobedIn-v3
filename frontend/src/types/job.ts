@@ -28,6 +28,7 @@ export interface JobListItem {
   scraped_at: string | null;
   created_at: string | null;
   match_score: number | null;
+  is_saved: boolean;
 }
 
 export interface JobListResponse {
@@ -57,6 +58,7 @@ export interface JobDetail {
   alternate_sources: Record<string, unknown>[] | null;
   match_score: number | null;
   match_breakdown: MatchBreakdown | null;
+  is_saved: boolean;
 }
 
 export interface SavedJob {

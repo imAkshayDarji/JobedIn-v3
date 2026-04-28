@@ -16,7 +16,7 @@
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | DONE | `92ee4ed` |
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | DONE | `50d137a` |
 | Day 12 | Job Discovery | Matching + Scoring | DONE | `a90e4d6` |
-| Day 13 | Job Discovery | Job Discovery Frontend | TODO | -- |
+| Day 13 | Job Discovery | Job Discovery Frontend | DONE | -- |
 | Day 14 | Dashboard | Dashboard | TODO | -- |
 | Day 15 | Dashboard | Profile Page | TODO | -- |
 | Day 16 | Dashboard | Applications Tracker | TODO | -- |
@@ -518,6 +518,22 @@ Step 4: VALIDATE (ATS scoring)
 - Save/unsave jobs with bookmark
 - Skeleton loading + error states
 - "Discover Jobs" button triggers LinkedIn + API sources (shows LinkedIn status)
+
+### Day 13 Completion Notes
+- **Backend `is_saved`:** Added `is_saved: bool = False` to `JobListItem` and `JobDetailResponse` schemas. `list_jobs()` OUTER JOINs `Application` (status=saved) to compute per-job. `get_job()` queries `Application` separately.
+- **Backend search validation:** Added `max_length=200` to `search` Query param in `list_jobs()`.
+- **Frontend search:** Debounced text input (300ms) on jobs page, passes `search` param to API.
+- **Frontend filters:** All 5 filters wired: source, experience level, job type, remote policy, sort by. Reset offset to 0 on filter change.
+- **Frontend pagination:** "Load More" button showing remaining count, disabled during loading to prevent double-click.
+- **Frontend polling cleanup:** `useRef` for interval IDs, cleaned up in `useEffect` return. No memory leaks.
+- **Frontend AbortController:** In-flight `loadJobs()` fetch cancelled when new one fires, preventing stale response overwrites.
+- **Frontend error state:** Error banner with retry button when API fails.
+- **Frontend source status:** `getSourcesStatus()` loaded on mount, LinkedIn availability shown near Discover button.
+- **Frontend save/unsave:** Optimistic UI toggle on job detail page. Reverts on error, handles 409/404 gracefully.
+- **Frontend generate links:** "Generate Resume" -> `/resumes/generate?job_id={id}`, "Generate Cover Letter" -> `/cover-letters/generate?job_id={id}`.
+- **JobCard:** Optional `isSaved` prop, bookmark icon indicator in top-right corner.
+- **Integration tests:** 7 new tests in `test_jobs_list.py` covering `is_saved` (false/true), search, source filter, remote_policy filter, search max_length rejection, detail `is_saved`.
+- **TypeScript:** Zero errors on `tsc --noEmit`.
 
 ---
 

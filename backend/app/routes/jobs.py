@@ -334,7 +334,7 @@ async def list_jobs(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     source: str | None = Query(default=None),
-    search: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=200),
     experience_level: str | None = Query(default=None),
     job_type: str | None = Query(default=None),
     remote_policy: str | None = Query(default=None),
@@ -350,9 +350,12 @@ async def list_jobs(
 
     clauses = _job_list_filters(source, search, experience_level, job_type, remote_policy)
 
-    stmt = select(Job, JobMatch.match_score).outerjoin(
+    stmt = select(Job, JobMatch.match_score, Application.id).outerjoin(
         JobMatch,
         and_(JobMatch.job_id == Job.id, JobMatch.user_id == user.id),
+    ).outerjoin(
+        Application,
+        and_(Application.job_id == Job.id, Application.user_id == user.id, Application.status == ApplicationStatus.saved),
     )
     if clauses:
         stmt = stmt.where(and_(*clauses))
@@ -393,8 +396,9 @@ async def list_jobs(
                 scraped_at=job.scraped_at,
                 created_at=job.created_at,
                 match_score=match_score,
+                is_saved=app_id is not None,
             )
-            for job, match_score in rows
+            for job, match_score, app_id in rows
         ],
         total=total,
     )
@@ -580,6 +584,7 @@ async def get_job(
 
     match_score: float | None = None
     match_breakdown = None
+    is_saved = False
 
     match_result = await session.execute(
         select(JobMatch).where(
@@ -595,6 +600,18 @@ async def get_job(
             "role_relevance_score": cached.role_relevance_score,
             "location_score": cached.location_score,
         }
+
+    saved_result = await session.execute(
+        select(Application.id).where(
+            and_(
+                Application.user_id == user.id,
+                Application.job_id == job_id,
+                Application.status == ApplicationStatus.saved,
+            )
+        )
+    )
+    if saved_result.scalar_one_or_none():
+        is_saved = True
 
     return JobDetailResponse(
         id=job.id,
@@ -618,6 +635,7 @@ async def get_job(
         alternate_sources=job.alternate_sources,
         match_score=match_score,
         match_breakdown=match_breakdown,
+        is_saved=is_saved,
     )
 
 

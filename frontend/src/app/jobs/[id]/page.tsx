@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { JobMatchScore } from "@/components/features/JobMatchScore";
-import { getJob, getJobScore } from "@/lib/api/jobs";
+import { getJob, getJobScore, saveJob, unsaveJob } from "@/lib/api/jobs";
 import type { JobDetail, MatchBreakdown } from "@/types/job";
 
 export default function JobDetailPage() {
@@ -19,6 +19,8 @@ export default function JobDetailPage() {
   const [matchScore, setMatchScore] = useState<number | null>(null);
   const [matchedSkills, setMatchedSkills] = useState<string[]>([]);
   const [missingSkills, setMissingSkills] = useState<string[]>([]);
+  const [isSaved, setIsSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     loadJob();
@@ -28,6 +30,7 @@ export default function JobDetailPage() {
     try {
       const data = await getJob(jobId);
       setJob(data);
+      setIsSaved(data.is_saved);
 
       if (data.match_score != null && data.match_breakdown) {
         setMatchScore(data.match_score);
@@ -47,6 +50,32 @@ export default function JobDetailPage() {
       setJob(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleToggleSave() {
+    if (!job) return;
+    setSaveError(null);
+
+    const previousSaved = isSaved;
+    setIsSaved(!previousSaved);
+
+    try {
+      if (previousSaved) {
+        await unsaveJob(jobId);
+      } else {
+        await saveJob(jobId);
+      }
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (previousSaved && status === 404) {
+        setIsSaved(false);
+      } else if (!previousSaved && status === 409) {
+        setIsSaved(true);
+      } else {
+        setIsSaved(previousSaved);
+        setSaveError(previousSaved ? "Failed to unsave job." : "Failed to save job.");
+      }
     }
   }
 
@@ -108,8 +137,30 @@ export default function JobDetailPage() {
                   </span>
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-gray-900">{job.title}</h1>
-              <p className="text-lg text-gray-600">{job.company}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">{job.title}</h1>
+                  <p className="text-lg text-gray-600">{job.company}</p>
+                </div>
+                <button
+                  onClick={handleToggleSave}
+                  className="rounded-md p-2 hover:bg-gray-100 transition-colors"
+                  title={isSaved ? "Unsave job" : "Save job"}
+                >
+                  {isSaved ? (
+                    <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M5 2h14a1 1 0 011 1v19.143a.5.5 0 01-.766.424L12 18.03l-7.234 4.536A.5.5 0 014 22.143V3a1 1 0 011-1z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              {saveError && (
+                <p className="text-sm text-red-600 mt-1">{saveError}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -161,12 +212,18 @@ export default function JobDetailPage() {
                   Apply Now
                 </a>
               )}
-              <button className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <Link
+                href={`/resumes/generate?job_id=${jobId}`}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
                 Generate Resume
-              </button>
-              <button className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              </Link>
+              <Link
+                href={`/cover-letters/generate?job_id=${jobId}`}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
                 Generate Cover Letter
-              </button>
+              </Link>
             </div>
           </div>
 
