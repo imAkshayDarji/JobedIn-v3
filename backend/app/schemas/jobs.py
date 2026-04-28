@@ -56,8 +56,14 @@ class JobListItem(BaseModel):
     location: str | None = None
     source: str
     source_url: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    experience_level: str | None = None
+    job_type: str | None = None
+    remote_policy: str | None = None
     scraped_at: datetime.datetime | None = None
     created_at: datetime.datetime | None = None
+    match_score: float | None = None
 
 
 class JobListResponse(BaseModel):
@@ -85,6 +91,15 @@ class JobDetailResponse(BaseModel):
     scraped_at: datetime.datetime | None = None
     created_at: datetime.datetime | None = None
     alternate_sources: list[dict] | None = None
+    match_score: float | None = None
+    match_breakdown: "MatchBreakdownSchema | None" = None
+
+
+class MatchBreakdownSchema(BaseModel):
+    skills_score: float
+    experience_score: float
+    role_relevance_score: float
+    location_score: float
 
 
 class SavedJobListItem(BaseModel):

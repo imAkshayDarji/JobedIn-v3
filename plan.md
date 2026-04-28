@@ -14,8 +14,8 @@
 | Day 8 | AI Pipeline | Interactive Interview Coach | DONE | `ed6d652` |
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | DONE | `2e0b4fd` |
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | DONE | `92ee4ed` |
-| Day 11 | Job Discovery | API Sources + Merge/Deduplication | TODO | -- |
-| Day 12 | Job Discovery | Matching + Scoring | TODO | -- |
+| Day 11 | Job Discovery | API Sources + Merge/Deduplication | DONE | `50d137a` |
+| Day 12 | Job Discovery | Matching + Scoring | DONE | -- |
 | Day 13 | Job Discovery | Job Discovery Frontend | TODO | -- |
 | Day 14 | Dashboard | Dashboard | TODO | -- |
 | Day 15 | Dashboard | Profile Page | TODO | -- |
@@ -474,6 +474,31 @@ Step 4: VALIDATE (ATS scoring)
 - Merge all sources + LinkedIn results
 - Deduplication by fuzzy matching on `(title, company, location)`
 - Every job stores `source_url` + `source` enum
+
+### Day 11 Completion Notes
+- **API adapters:** `JobSourceAdapter` ABC with `JSearchAdapter`, `AdzunaAdapter`, `RemotiveAdapter`, `ReedAdapter` in `backend/app/services/job_sources/`. Each implements `build_url()`, `build_params()`, `build_headers()`, `_map_response()`. Registry pattern via `ADAPTER_REGISTRY`.
+- **Parallel fetch:** `run_api_discovery()` in `job_discovery.py` uses `asyncio.gather(return_exceptions=True)` for all sources, per-source ingest.
+- **Job dedup:** `backend/app/services/job_dedup.py` — `SequenceMatcher` fuzzy matching on `(title, company)` with thresholds 0.85/0.80. Duplicate sources merged into `alternate_sources` JSON field.
+- **Bulk upsert:** PostgreSQL `INSERT ... ON CONFLICT DO UPDATE` via SQLAlchemy for job ingestion.
+- **Model updates:** `Job.alternate_sources` JSON column, `JobSource` enum with 5 values. Alembic migrations `a1b2c3d4e5f6` and `b2c3d4e5f6a7` (alternate_sources + discovery_logs).
+- **Discovery log:** `DiscoveryLog` model tracks each API discovery run (sources, keywords, counts, duration, errors).
+- **Tests:** `test_api_sources.py` (adapter unit tests), `test_api_discovery_integration.py`, `test_job_dedup.py` — all passing.
+
+### Day 12 Completion Notes
+- **Scoring engine:** `backend/app/services/match_scorer.py` — `MatchScorer` class with 4 weighted dimensions: skills (40%), experience level (25%), role relevance (25%), location (10%). `SequenceMatcher` fuzzy matching, bigram keyword extraction, stop word filtering.
+- **Score cache:** `JobMatch` SQLModel in `backend/app/models/job_match.py` with composite unique constraint `(user_id, job_id)` and index `(user_id, match_score)`. Bulk upsert via PostgreSQL `on_conflict_do_update`. 24h staleness window.
+- **Alembic migration:** `c3d4e5f6a7b8` creates `job_matches` table with all indexes and foreign key.
+- **API routes (new):** `POST /api/jobs/match` (enqueue ARQ job), `GET /api/jobs/match/status` (poll progress), `GET /api/jobs/{id}/score` (cached or inline computed breakdown).
+- **API routes (updated):** `GET /api/jobs` — LEFT JOIN `job_matches`, returns `match_score` per job, `sort_by` whitelist (`match_score`, `created_at`, `salary_max`) with `DESC NULLS LAST`. `GET /api/jobs/{id}` — includes `match_score` + `match_breakdown`.
+- **Worker:** `match_jobs_job` in `job_worker.py` — processes unscored jobs in chunks of 100, bulk upserts results. Auto-triggered after `linkedin_discovery_job` completes.
+- **Config:** `MATCH_SCORE_STALENESS_HOURS=24`, `MATCH_SCORE_CHUNK_SIZE=100`.
+- **Schemas:** `backend/app/schemas/match.py` — `MatchBreakdown`, `JobMatchResultSchema`, `MatchRequest`, `MatchResponse`, `MatchStatusResponse`, `JobScoreResponse`.
+- **Frontend types:** `frontend/src/types/job.ts` — interfaces for all job/match/discover types.
+- **Frontend API client:** `frontend/src/lib/api/jobs.ts` — typed wrappers for all job endpoints.
+- **Frontend components:** `JobCard.tsx` (score ring, source badge, remote badge, salary range), `JobMatchScore.tsx` (SVG donut chart + 4 dimension bars + skill pills).
+- **Frontend pages:** `frontend/src/app/jobs/page.tsx` (listing with filters, sorting, discover + match buttons, polling), `frontend/src/app/jobs/[id]/page.tsx` (detail with match breakdown, apply actions).
+- **Nav:** "Jobs" added to `AppLayout.tsx` navLinks. Dashboard Jobs card activated with link.
+- **Tests:** 29 new tests in `test_match_scorer.py` covering keyword extraction, all 4 dimension scorers, weighted combination, score_job, score_jobs_batch, get_cached_score, edge cases. 152 total unit tests passing.
 
 ### Day 12: Matching + Scoring
 - `POST /api/jobs/match` -- score candidate profile against discovered jobs

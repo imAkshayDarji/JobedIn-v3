@@ -17,6 +17,7 @@ from app.models.education import Education
 from app.models.experience import Experience
 from app.models.interview import InterviewPrep, InterviewSession
 from app.models.job import Job
+from app.models.job_match import JobMatch
 from app.models.language import Language
 from app.models.project import Project
 from app.models.resume import Resume
@@ -41,6 +42,7 @@ __all__ = [
     "InterviewPrep",
     "InterviewSession",
     "Job",
+    "JobMatch",
     "Language",
     "Project",
     "Resume",
