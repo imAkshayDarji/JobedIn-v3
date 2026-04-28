@@ -15,7 +15,7 @@
 | Day 9 | AI Pipeline | AI Pipeline Testing + Polish | DONE | `2e0b4fd` |
 | Day 10 | Job Discovery | LinkedIn Playwright Discovery | DONE | `92ee4ed` |
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | DONE | `50d137a` |
-| Day 12 | Job Discovery | Matching + Scoring | DONE | -- |
+| Day 12 | Job Discovery | Matching + Scoring | DONE | `a90e4d6` |
 | Day 13 | Job Discovery | Job Discovery Frontend | TODO | -- |
 | Day 14 | Dashboard | Dashboard | TODO | -- |
 | Day 15 | Dashboard | Profile Page | TODO | -- |
