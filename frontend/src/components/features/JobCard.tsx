@@ -3,6 +3,7 @@ import type { JobListItem } from "@/types/job";
 
 interface JobCardProps {
   job: JobListItem;
+  isSaved?: boolean;
 }
 
 function getScoreColor(score: number): string {
@@ -52,13 +53,20 @@ function getSourceBadge(source: string) {
   );
 }
 
-export function JobCard({ job }: JobCardProps) {
+export function JobCard({ job, isSaved = false }: JobCardProps) {
   const scoreRadius = 18;
   const circumference = 2 * Math.PI * scoreRadius;
 
   return (
     <Link href={`/jobs/${job.id}`} className="block">
-      <div className="rounded-lg border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer">
+      <div className="rounded-lg border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer relative">
+        {isSaved && (
+          <div className="absolute top-3 right-3">
+            <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5 2h14a1 1 0 011 1v19.143a.5.5 0 01-.766.424L12 18.03l-7.234 4.536A.5.5 0 014 22.143V3a1 1 0 011-1z" />
+            </svg>
+          </div>
+        )}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1">

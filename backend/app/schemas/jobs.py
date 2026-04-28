@@ -64,6 +64,7 @@ class JobListItem(BaseModel):
     scraped_at: datetime.datetime | None = None
     created_at: datetime.datetime | None = None
     match_score: float | None = None
+    is_saved: bool = False
 
 
 class JobListResponse(BaseModel):
@@ -93,6 +94,7 @@ class JobDetailResponse(BaseModel):
     alternate_sources: list[dict] | None = None
     match_score: float | None = None
     match_breakdown: "MatchBreakdownSchema | None" = None
+    is_saved: bool = False
 
 
 class MatchBreakdownSchema(BaseModel):
