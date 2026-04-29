@@ -108,7 +108,7 @@ function StatCards({ stats }: { stats: DashboardResponse["stats"] }) {
             .join(", ") || undefined
         }
         color="green"
-        href="/jobs"
+        href="/applications"
       />
       <StatCard
         label="Resumes"

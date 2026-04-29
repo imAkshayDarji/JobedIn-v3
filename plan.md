@@ -19,7 +19,7 @@
 | Day 13 | Job Discovery | Job Discovery Frontend | DONE | -- |
 | Day 14 | Dashboard | Dashboard | DONE | -- |
 | Day 15 | Dashboard | Profile Page | DONE | -- |
-| Day 16 | Dashboard | Applications Tracker | TODO | -- |
+| Day 16 | Dashboard | Applications Tracker | DONE | -- |
 | Day 17 | Auto-Apply | Playwright Setup + ATS Detection | TODO | -- |
 | Day 18 | Auto-Apply | ATS Form Fillers | TODO | -- |
 | Day 19 | Auto-Apply | Auto-Apply Orchestrator | TODO | -- |
@@ -582,6 +582,18 @@ Step 4: VALIDATE (ATS scoring)
 - Filter by status, date, company
 - Quick actions: view resume, view cover letter, start interview prep
 - Application detail modal with full timeline
+
+#### Day 16 Completion Notes
+- **Backend schemas:** `backend/app/schemas/applications.py` (NEW) — `ApplicationStatusEnum`, `ApplicationUpdate`, `ApplicationNotesUpdate`, `ApplicationJobInfo`, `ApplicationListItem`, `ApplicationListResponse`, `ApplicationDetail`, `ApplicationStats`
+- **Backend routes:** `backend/app/routes/applications.py` (NEW) — 6 endpoints: `GET /api/applications` (paginated list with filters: status, company, sort_by), `GET /api/applications/stats`, `GET /api/applications/{id}`, `PATCH /api/applications/{id}`, `DELETE /api/applications/{id}`, `POST /api/applications/{id}/notes`
+- **Router registration:** `main.py` updated with `applications_router`
+- **Frontend types:** `frontend/src/types/application.ts` (NEW) — `ApplicationStatus`, `ApplicationJobInfo`, `ApplicationListItem`, `ApplicationListResponse`, `ApplicationDetail`, `ApplicationStats`, `ApplicationUpdate`
+- **Frontend API client:** `frontend/src/lib/api/applications.ts` (NEW) — `listApplications()`, `getApplication()`, `updateApplication()`, `deleteApplication()`, `getApplicationStats()`, `updateApplicationNotes()`
+- **Frontend components:** `ApplicationCard.tsx` (card with status badge, match score, artifact dots), `PipelineColumn.tsx` (Kanban column with count badge), `ApplicationDetailModal.tsx` (full detail with status transitions, notes, quick-action links, delete)
+- **Frontend page:** `frontend/src/app/applications/page.tsx` — Kanban board with 7 pipeline columns + collapsible terminal statuses, company search, status filter pills, pipeline/list view toggle, loading skeletons, empty state with CTA
+- **Navigation:** `AppLayout.tsx` updated — "Applications" added between "Jobs" and "Resumes"
+- **Dashboard:** Applications stat card now links to `/applications` instead of `/jobs`
+- **Tests:** 21 backend tests covering list (filter, search, pagination), stats, detail, update status, notes, delete, ownership checks, auth, sort; 0 TypeScript errors; 0 linter errors
 
 ---
 

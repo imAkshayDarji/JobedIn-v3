@@ -63,6 +63,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navLinks = [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/jobs", label: "Jobs" },
+    { href: "/applications", label: "Applications" },
     { href: "/resumes", label: "Resumes" },
     { href: "/cover-letters", label: "Cover Letters" },
     { href: "/interview", label: "Interview Coach" },
