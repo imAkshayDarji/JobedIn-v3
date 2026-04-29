@@ -42,6 +42,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/jobs", label: "Jobs" },
     { href: "/resumes", label: "Resumes" },
+    { href: "/cover-letters", label: "Cover Letters" },
     { href: "/interview", label: "Interview Coach" },
   ];
 

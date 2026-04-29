@@ -8,6 +8,7 @@ interface ApiError {
 
 interface RequestOptions {
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -56,6 +57,7 @@ async function get<T>(path: string, options?: RequestOptions): Promise<T> {
       ...authHeaders,
       ...options?.headers,
     },
+    signal: options?.signal,
   });
   return handleResponse<T>(response);
 }

@@ -17,7 +17,7 @@
 | Day 11 | Job Discovery | API Sources + Merge/Deduplication | DONE | `50d137a` |
 | Day 12 | Job Discovery | Matching + Scoring | DONE | `a90e4d6` |
 | Day 13 | Job Discovery | Job Discovery Frontend | DONE | -- |
-| Day 14 | Dashboard | Dashboard | TODO | -- |
+| Day 14 | Dashboard | Dashboard | DONE | -- |
 | Day 15 | Dashboard | Profile Page | TODO | -- |
 | Day 16 | Dashboard | Applications Tracker | TODO | -- |
 | Day 17 | Auto-Apply | Playwright Setup + ATS Detection | TODO | -- |
@@ -544,6 +544,17 @@ Step 4: VALIDATE (ATS scoring)
 - Recent activity feed (real-time via Supabase Realtime)
 - Quick actions: Discover Jobs, Generate Resume, Start Interview Coach
 - Empty states with CTAs for new users
+
+#### Day 14 Completion Notes
+- `GET /api/dashboard` endpoint with `asyncio.gather(return_exceptions=True)` for graceful degradation
+- Aggregated stats: jobs matched, applications, resumes, cover letters, interview sessions, avg ATS/match/session scores
+- Recent activity feed: 10 most recent items across 4 entity types, sorted by created_at DESC
+- Activity items include `job_id` for linking applications to `/jobs/{job_id}`
+- Frontend: 6 stat cards (null -> "--"), ActivityFeed, QuickActions, skeleton loading, empty state, error state
+- AbortController 10s timeout on dashboard API call
+- "Cover Letters" added to navigation
+- 16 backend tests covering auth, empty, with-data, activity, profile, partial failure scenarios
+- Structured logging at endpoint entry/exit with latency_ms
 
 ### Day 15: Profile Page
 - Editable sections with inline CRUD
