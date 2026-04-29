@@ -98,6 +98,24 @@ async function put<T>(
   return handleResponse<T>(response);
 }
 
+async function patch<T>(
+  path: string,
+  body?: unknown,
+  options?: RequestOptions,
+): Promise<T> {
+  const authHeaders = await getAuthHeaders();
+  const response = await fetch(`${getBaseUrl()}${path}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+      ...options?.headers,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return handleResponse<T>(response);
+}
+
 async function del<T>(path: string, options?: RequestOptions): Promise<T> {
   const authHeaders = await getAuthHeaders();
   const response = await fetch(`${getBaseUrl()}${path}`, {
@@ -111,5 +129,5 @@ async function del<T>(path: string, options?: RequestOptions): Promise<T> {
   return handleResponse<T>(response);
 }
 
-export const api = { get, post, put, delete: del };
+export const api = { get, post, put, patch, delete: del };
 export type { ApiError };

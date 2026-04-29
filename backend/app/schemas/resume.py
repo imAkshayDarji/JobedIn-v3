@@ -63,9 +63,3 @@ class ResumeResponse(BaseModel):
     status: str | None = None
 
 
-class ProfileMeResponse(BaseModel):
-    id: uuid.UUID
-    first_name: str
-    last_name: str
-    onboarding_completed: bool
-    experience_level: str | None = None
