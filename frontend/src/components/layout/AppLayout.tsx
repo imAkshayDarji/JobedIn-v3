@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
@@ -11,11 +11,15 @@ interface AppLayoutProps {
 
 interface UserInfo {
   email: string;
+  first_name?: string;
+  last_name?: string;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -26,10 +30,28 @@ export function AppLayout({ children }: AppLayoutProps) {
         data: { session },
       } = await supabase.auth.getSession();
       if (session?.user) {
-        setUser({ email: session.user.email ?? "" });
+        const meta = session.user.user_metadata ?? {};
+        setUser({
+          email: session.user.email ?? "",
+          first_name: meta.first_name,
+          last_name: meta.last_name,
+        });
       }
     }
     loadUser();
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   async function handleSignOut() {
@@ -49,6 +71,16 @@ export function AppLayout({ children }: AppLayoutProps) {
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
+  }
+
+  function getUserInitials(): string {
+    if (user?.first_name && user?.last_name) {
+      return (user.first_name[0] + user.last_name[0]).toUpperCase();
+    }
+    if (user?.email) {
+      return user.email[0].toUpperCase();
+    }
+    return "?";
   }
 
   return (
@@ -76,19 +108,40 @@ export function AppLayout({ children }: AppLayoutProps) {
             </nav>
           </div>
 
-          <div className="flex items-center gap-4">
-            {user && (
-              <span className="hidden sm:block text-sm text-gray-600">
-                {user.email}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Sign Out
-            </button>
+          <div className="flex items-center gap-3">
+            <div ref={dropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                title={user?.email}
+              >
+                {getUserInitials()}
+              </button>
+
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-2 w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg z-50">
+                  <Link
+                    href="/profile"
+                    onClick={() => setDropdownOpen(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Profile
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      handleSignOut();
+                    }}
+                    className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -118,6 +171,17 @@ export function AppLayout({ children }: AppLayoutProps) {
                   {link.label}
                 </Link>
               ))}
+              <Link
+                href="/profile"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  isActive("/profile")
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Profile
+              </Link>
             </nav>
           </div>
         )}

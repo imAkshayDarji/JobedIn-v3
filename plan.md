@@ -18,7 +18,7 @@
 | Day 12 | Job Discovery | Matching + Scoring | DONE | `a90e4d6` |
 | Day 13 | Job Discovery | Job Discovery Frontend | DONE | -- |
 | Day 14 | Dashboard | Dashboard | DONE | -- |
-| Day 15 | Dashboard | Profile Page | TODO | -- |
+| Day 15 | Dashboard | Profile Page | DONE | -- |
 | Day 16 | Dashboard | Applications Tracker | TODO | -- |
 | Day 17 | Auto-Apply | Playwright Setup + ATS Detection | TODO | -- |
 | Day 18 | Auto-Apply | ATS Form Fillers | TODO | -- |
@@ -559,9 +559,22 @@ Step 4: VALIDATE (ATS scoring)
 ### Day 15: Profile Page
 - Editable sections with inline CRUD
 - Sections: Personal Info, Target Roles, Skills, Education, Experience, Projects, Certifications, Languages
-- Each section loads independently
-- Resume upload button that re-parses and suggests updates
-- Settings page for LinkedIn credentials (encrypted storage)
+- Single `GET /api/profile/full` fetch strategy (eager-loads all 7 child entities)
+- Resume re-upload button that re-parses and suggests updates
+- LinkedIn credentials section (encrypted storage)
+- User avatar with initials dropdown in header
+
+#### Day 15 Completion Notes
+- **Backend schemas:** `backend/app/schemas/profile.py` (NEW) — 21 CRUD schemas (Create/Update/Response for 7 entities) + `ProfileUpdateRequest`, `ProfileMeResponse` (migrated from `resume.py`), `ProfileDetailResponse`
+- **Backend routes:** `backend/app/routes/profile.py` expanded from 1 to 22 endpoints: `GET /full` (eager-loaded via `selectinload`), `PATCH /me`, and CRUD (POST/PUT/DELETE) for educations, experiences, skills, projects, target-roles, certifications, languages
+- **Ownership check:** `_get_owned_item()` helper queries by `id` AND `candidate_id`, returns 404 if not owned
+- **Frontend types:** `frontend/src/types/profile.ts` expanded from 1 to 29 interfaces matching all backend schemas
+- **Frontend API clients:** `frontend/src/lib/api/profile.ts` expanded from 1 to 22 functions; `frontend/src/lib/api/settings.ts` (NEW) for LinkedIn credentials
+- **Frontend components:** `ProfileSection.tsx` (reusable section card), `ProfilePersonalInfo.tsx` (view/edit toggle), `ProfileChildList.tsx` (generic CRUD list with hover actions)
+- **Frontend page:** `frontend/src/app/profile/page.tsx` — 10 sections rendered from single `getProfileFull()` call, refetches after any child entity mutation
+- **Navigation:** `AppLayout.tsx` updated with user avatar dropdown (initials from user metadata, Profile link, Sign Out) + Profile link in mobile nav
+- **API client:** Added `patch` method to base `api.ts` client
+- **Tests:** 33 backend tests covering auth, full profile, PATCH, CRUD for all 7 entities, ownership checks, validation; 0 TypeScript errors; 0 linter errors
 
 ### Day 16: Applications Tracker
 - Pipeline view: Saved -> Generating -> Ready -> Applied -> Screening -> Interview -> Offer -> Rejected
