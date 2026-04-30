@@ -20,7 +20,7 @@
 | Day 14 | Dashboard | Dashboard | DONE | -- |
 | Day 15 | Dashboard | Profile Page | DONE | -- |
 | Day 16 | Dashboard | Applications Tracker | DONE | -- |
-| Day 17 | Auto-Apply | Playwright Setup + ATS Detection | TODO | -- |
+| Day 17 | Auto-Apply | Playwright Setup + ATS Detection | DONE | -- |
 | Day 18 | Auto-Apply | ATS Form Fillers | TODO | -- |
 | Day 19 | Auto-Apply | Auto-Apply Orchestrator | TODO | -- |
 | Day 20 | Auto-Apply | Apply Frontend | TODO | -- |
@@ -594,6 +594,24 @@ Step 4: VALIDATE (ATS scoring)
 - **Navigation:** `AppLayout.tsx` updated — "Applications" added between "Jobs" and "Resumes"
 - **Dashboard:** Applications stat card now links to `/applications` instead of `/jobs`
 - **Tests:** 21 backend tests covering list (filter, search, pagination), stats, detail, update status, notes, delete, ownership checks, auth, sort; 0 TypeScript errors; 0 linter errors
+
+#### Day 17 Completion Notes
+- **BrowserService:** `backend/app/services/browser_service.py` (NEW) — Async context manager for Playwright with stealth, lifecycle management, screenshot capture, directory creation, safe navigation, random delay
+- **ATSDetector:** `backend/app/services/ats_detector.py` (NEW) — URL pattern matching (Greenhouse, Lever, Workday) + DOM inspection fallback + ATS difficulty classification (easy_apply / multi_step / manual_only) + CAPTCHA detection
+- **URL Validator:** `backend/app/services/url_validator.py` (NEW) — SSRF protection blocking private IPs, loopback, link-local, reserved, multicast addresses and non-http(s) schemes
+- **ATS Fillers ABC:** `backend/app/services/ats_fillers/` (NEW) — Abstract base class with `can_handle`, `fill`, `submit`, `verify` + exception hierarchy (ATSError, ATSDetectionError, ATSFormError, ATSSubmitError, ATSTimeoutError, ATSCAPTCHAError)
+- **Application model:** Added 8 ATS fields (ats_platform, ats_detection_method, ats_confidence, ats_form_url, ats_detected_fields, ats_screenshot_path, ats_detection_error, ats_difficulty) + composite index on (user_id, status)
+- **Alembic migration:** `e7a8b9c0d1e2` — adds all ATS fields + index to applications table
+- **Schemas:** `backend/app/schemas/apply.py` (NEW) — ATSDetectRequest, ATSDetectResponse, ATSDetectionStatusResponse, ATSDifficultyEnum
+- **Routes:** `backend/app/routes/apply.py` (NEW) — 3 endpoints: POST /api/apply/detect (concurrency guard: status check + ARQ job_id dedup), GET /api/apply/detect/{id}/status, GET /api/apply/detect/{id}/screenshot (path traversal guard)
+- **Worker:** `ats_detect_job` added to `job_worker.py` — catch-all rescue (reverts status on error), deleted-row guard (graceful exit), full detection pipeline with BrowserService + ATSDetector
+- **Stale sweeper:** `sweep_stale_ats_detections` cron in `job_worker.py` — reverts Applications stuck in 'generating' for >10 minutes
+- **Auto-detect on save:** `routes/jobs.py` save_job enqueues `ats_detect_job` when job has apply_url
+- **Ingestion-time detection:** `job_discovery.py` runs URL-pattern ATS detection during job ingestion (no browser needed)
+- **Config:** ATS_SCREENSHOT_DIR, ATS_DETECT_TIMEOUT_MS, ATS_DETECT_HEADLESS, ATS_STALE_DETECTION_MINUTES added to settings
+- **Dockerfile.worker:** Added `mkdir -p /app/screenshots`
+- **Router registration:** `apply_router` registered in `main.py`
+- **Tests:** 37 new tests (13 url_validator + 14 ats_detector + 10 apply_routes); 355 total tests passing
 
 ---
 

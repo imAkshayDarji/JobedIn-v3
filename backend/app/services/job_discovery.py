@@ -26,6 +26,17 @@ from app.services.job_sources.linkedin import LinkedInDiscovery
 logger = logging.getLogger(__name__)
 
 
+def _detect_ats_from_url(url: str) -> str | None:
+    """Run URL-pattern-only ATS detection (no browser needed)."""
+    from app.services.ats_detector import ATS_URL_PATTERNS
+
+    for platform, patterns in ATS_URL_PATTERNS.items():
+        for pattern in patterns:
+            if pattern.search(url):
+                return platform
+    return None
+
+
 def _utc_naive_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -69,6 +80,13 @@ class JobDiscoveryService:
                     "created_at": now_ts,
                     "updated_at": now_ts,
                 }
+
+                apply_url = normalized.get("apply_url") or normalized.get("source_url")
+                if apply_url and not normalized.get("ats_platform"):
+                    url_ats = _detect_ats_from_url(apply_url)
+                    if url_ats:
+                        row["ats_platform"] = url_ats
+
                 insert_stmt = insert(Job).values(**row)
                 upsert_stmt = insert_stmt.on_conflict_do_update(
                     constraint="uq_jobs_source_external_id",

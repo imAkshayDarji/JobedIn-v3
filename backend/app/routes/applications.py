@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, desc, func, or_, select
@@ -289,12 +289,12 @@ async def update_application(
             application.status == ApplicationStatus.applied
             and application.applied_at is None
         ):
-            application.applied_at = datetime.now(timezone.utc)
+            application.applied_at = datetime.utcnow()
 
     if update.notes is not None:
         application.notes = update.notes
 
-    application.updated_at = datetime.now(timezone.utc)
+    application.updated_at = datetime.utcnow()
     session.add(application)
     await session.commit()
     await session.refresh(application)
@@ -346,7 +346,7 @@ async def update_application_notes(
     application = await _get_application_with_ownership(application_id, user.id, session)
 
     application.notes = notes_update.notes
-    application.updated_at = datetime.now(timezone.utc)
+    application.updated_at = datetime.utcnow()
     session.add(application)
     await session.commit()
     await session.refresh(application)
