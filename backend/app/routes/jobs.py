@@ -673,6 +673,24 @@ async def save_job(
     session.add(application)
     await session.commit()
 
+    if job.apply_url:
+        try:
+            redis = await arq_create_pool(_get_redis_settings())
+            await redis.enqueue_job(
+                "ats_detect_job",
+                str(application.id),
+                str(user.id),
+                job.apply_url,
+                _job_id=f"ats_detect_{application.id}",
+            )
+            await redis.close()
+            logger.info(
+                "auto_ats_detect_enqueued",
+                extra={"user_id": str(user.id), "job_id": str(job_id), "application_id": str(application.id)},
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to enqueue auto ATS detection: {exc}")
+
     logger.info(
         "job_saved",
         extra={"user_id": str(user.id), "job_id": str(job_id)},

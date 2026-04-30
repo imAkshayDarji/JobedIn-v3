@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 RUN playwright install chromium --with-deps
 
+RUN mkdir -p /app/screenshots
+
 COPY . .
 
 CMD ["arq", "app.workers.job_worker.JobWorkerSettings"]

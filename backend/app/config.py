@@ -50,5 +50,10 @@ class Settings(BaseSettings):
     MATCH_SCORE_STALENESS_HOURS: int = 24
     MATCH_SCORE_CHUNK_SIZE: int = 100
 
+    ATS_SCREENSHOT_DIR: str = "./screenshots"
+    ATS_DETECT_TIMEOUT_MS: int = 30000
+    ATS_DETECT_HEADLESS: bool = True
+    ATS_STALE_DETECTION_MINUTES: int = 10
+
 
 settings = Settings()

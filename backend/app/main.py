@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routes.applications import router as applications_router
+from app.routes.apply import apply_router
 from app.routes.auth import router as auth_router
 from app.routes.cover_letters import router as cover_letter_router
 from app.routes.dashboard import router as dashboard_router
@@ -50,6 +51,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(applications_router)
+app.include_router(apply_router)
 app.include_router(dashboard_router)
 app.include_router(onboarding_router)
 app.include_router(profile_router)
