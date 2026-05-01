@@ -21,7 +21,7 @@
 | Day 15 | Dashboard | Profile Page | DONE | -- |
 | Day 16 | Dashboard | Applications Tracker | DONE | -- |
 | Day 17 | Auto-Apply | Playwright Setup + ATS Detection | DONE | -- |
-| Day 18 | Auto-Apply | ATS Form Fillers | TODO | -- |
+| Day 18 | Auto-Apply | ATS Form Fillers | DONE | `6cd71be` |
 | Day 19 | Auto-Apply | Auto-Apply Orchestrator | TODO | -- |
 | Day 20 | Auto-Apply | Apply Frontend | TODO | -- |
 | Day 21 | Polish | Error Handling + Edge Cases | TODO | -- |
@@ -612,6 +612,19 @@ Step 4: VALIDATE (ATS scoring)
 - **Dockerfile.worker:** Added `mkdir -p /app/screenshots`
 - **Router registration:** `apply_router` registered in `main.py`
 - **Tests:** 37 new tests (13 url_validator + 14 ats_detector + 10 apply_routes); 355 total tests passing
+
+### Day 18 Completion Notes
+- **BaseATSFiller:** `backend/app/services/ats_fillers/base_filler.py` (NEW) — Plain utility class (not an ATSFiller subclass) with 10 shared helpers: `fill_text_field`, `select_dropdown`, `upload_file`, `check_checkbox`, `fill_name_fields`, `fill_contact_fields`, `fill_education_fields`, `fill_experience_fields`, `normalize_phone`, `wait_and_screenshot`
+- **FieldResult / FillResult:** Added to `exceptions.py` — Pydantic models for per-field and per-form results; individual field helpers return `FieldResult` (never raise on missing fields); `fill()` returns `FillResult` with `filled` and `skipped` lists
+- **ATSFillerRegistry:** `backend/app/services/ats_fillers/registry.py` (NEW) — Dict-based routing from platform name to concrete filler instance; `get_filler()` returns None for unknown platforms; `supported_platforms()` lists all 3
+- **GreenhouseFiller:** `backend/app/services/ats_fillers/greenhouse.py` (NEW) — Single-page form filling; class-level `SELECTORS` dict; auto-declines EEO/voluntary fields; fills name, contact, education (max 3), experience (max 3), resume upload; verification via confirmation text or URL
+- **LeverFiller:** `backend/app/services/ats_fillers/lever.py` (NEW) — React-rendered form support; fills full name (combined), email, phone, org, URLs (LinkedIn, GitHub, portfolio, website); simplest ATS form; verification via `.application-complete` class or thanks/applied URL
+- **WorkdayFiller:** `backend/app/services/ats_fillers/workday.py` (NEW) — Multi-step wizard navigation (5+ steps); `data-automation-id` selectors; 180s total timeout with `asyncio.timeout`; step-by-step fill with `wait_for_load_state("networkidle")` between transitions; verification via confirmation container or "Application Submitted" text
+- **Security:** `upload_file` validates path is within `ATS_RESUME_DIR` (path traversal protection); logging uses field names only, never PII values
+- **Config:** Added `ATS_FILL_TIMEOUT_SECONDS=120` and `ATS_RESUME_DIR=./resumes` to `config.py`
+- **`__init__.py` update:** Updated `fill()` return type to `FillResult` in `ATSFiller` ABC
+- **MAX_ENTRIES = 3** for experience/education entries across all fillers
+- **Tests:** 87 new tests (31 base_filler + 13 greenhouse + 14 lever + 14 workday + 8 registry + 7 model/misc); **442 total tests passing**; 0 regressions
 
 ---
 
