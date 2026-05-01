@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     ATS_DETECT_TIMEOUT_MS: int = 30000
     ATS_DETECT_HEADLESS: bool = True
     ATS_STALE_DETECTION_MINUTES: int = 10
+    ATS_FILL_TIMEOUT_SECONDS: int = 120
+    ATS_RESUME_DIR: str = "./resumes"
 
 
 settings = Settings()

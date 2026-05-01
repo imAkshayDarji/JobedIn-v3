@@ -25,6 +25,20 @@ class ATSCAPTCHAError(ATSError):
     """Raised when a CAPTCHA is detected on the page."""
 
 
+class FieldResult(BaseModel):
+    """Result of filling a single form field."""
+    selector: str
+    field_name: str
+    success: bool
+    error: str | None = None
+
+
+class FillResult(BaseModel):
+    """Result of filling all fields on an ATS form."""
+    filled: list[FieldResult] = []
+    skipped: list[FieldResult] = []
+
+
 class ApplyResult(BaseModel):
     """Result of an ATS application submission."""
     success: bool
