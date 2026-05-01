@@ -22,7 +22,7 @@
 | Day 16 | Dashboard | Applications Tracker | DONE | -- |
 | Day 17 | Auto-Apply | Playwright Setup + ATS Detection | DONE | -- |
 | Day 18 | Auto-Apply | ATS Form Fillers | DONE | `6cd71be` |
-| Day 19 | Auto-Apply | Auto-Apply Orchestrator | TODO | -- |
+| Day 19 | Auto-Apply | Auto-Apply Orchestrator | DONE | -- |
 | Day 20 | Auto-Apply | Apply Frontend | TODO | -- |
 | Day 21 | Polish | Error Handling + Edge Cases | TODO | -- |
 | Day 22 | Polish | Testing | TODO | -- |
@@ -650,7 +650,27 @@ Step 4: VALIDATE (ATS scoring)
 - `POST /api/apply/single` -- apply to one job
 - `POST /api/apply/bulk` -- apply to multiple jobs via arq queue
 - Orchestrator flow: load profile -> generate resume -> generate cover letter -> detect ATS -> fill form -> screenshot proof -> update status
-- WebSocket for real-time apply progress
+- SSE endpoint for real-time progress (GET /api/apply/{id}/stream)
+- Redis lock + step tracking for idempotent ARQ retries
+- Session-per-step DB pattern to prevent pool exhaustion
+- Skip ATS re-detection if application.ats_platform already populated
+- Resume failure = failed status (cascade stops), CL failure = continue
+- Bulk apply continues on individual failures (max 10 per request)
+- Sweep cron for stale applying jobs (every 5 min)
+- Doc-only Alembic migration for new ApplicationStatus values
+- 31 tests (19 orchestrator + 12 route) -- all passing
+
+#### Files Created/Modified:
+- `backend/app/models/base.py` -- Added applying, applied_with_issues, manual_required, failed to ApplicationStatus
+- `backend/app/config.py` -- Added ATS_APPLY_MAX_BULK, ATS_APPLY_STALE_MINUTES, ATS_RESUME_FILE_FORMAT
+- `backend/app/schemas/apply.py` -- Added 8 new schemas (ApplySingle*, ApplyBulk*, ApplyStatus*, ApplyOrchestratorResult, ApplySSEEvent)
+- `backend/app/services/apply_orchestrator.py` -- NEW: Full orchestrator with Redis lock, step tracking, session-per-step
+- `backend/app/workers/apply_worker.py` -- NEW: ARQ worker with apply_single_job, apply_bulk_job, sweep_stale_apply_jobs
+- `backend/app/routes/apply.py` -- Added POST /single, POST /bulk, GET /{id}/status, GET /{id}/stream (SSE), GET /bulk/{task_id}/status
+- `docker-compose.yml` -- Added apply-worker service
+- `backend/alembic/versions/f2a3b4c5d6e7_add_apply_status_values.py` -- Doc-only migration
+- `backend/tests/test_apply_orchestrator.py` -- NEW: 19 tests
+- `backend/tests/test_apply_auto_routes.py` -- NEW: 12 tests
 
 ### Day 20: Apply Frontend
 - Apply modal: progress steps in real-time

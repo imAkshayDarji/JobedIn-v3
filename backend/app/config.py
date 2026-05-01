@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     ATS_STALE_DETECTION_MINUTES: int = 10
     ATS_FILL_TIMEOUT_SECONDS: int = 120
     ATS_RESUME_DIR: str = "./resumes"
+    ATS_APPLY_MAX_BULK: int = 10
+    ATS_APPLY_STALE_MINUTES: int = 15
+    ATS_RESUME_FILE_FORMAT: str = "txt"
 
 
 settings = Settings()
