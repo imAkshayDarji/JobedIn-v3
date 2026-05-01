@@ -5,15 +5,14 @@ if TYPE_CHECKING:
     from playwright.async_api import Page
 
     from app.models.candidate import CandidateProfile
-    from app.services.ats_fillers.exceptions import ApplyResult
+    from app.services.ats_fillers.exceptions import ApplyResult, FillResult
 
 
 class ATSFiller(ABC):
     """Abstract base class for ATS platform form fillers.
 
     Subclasses implement platform-specific form filling logic.
-    Method `can_handle` (renamed from `detect` to avoid confusion with ATSDetector.detect)
-    checks if the current page belongs to this ATS platform.
+    Method `can_handle` checks if the current page belongs to this ATS platform.
     """
 
     @abstractmethod
@@ -27,7 +26,7 @@ class ATSFiller(ABC):
         page: "Page",
         profile: "CandidateProfile",
         resume_path: str | None = None,
-    ) -> None:
+    ) -> "FillResult":
         """Fill the ATS application form with candidate profile data."""
         ...
 
@@ -40,3 +39,8 @@ class ATSFiller(ABC):
     async def verify(self, page: "Page") -> "ApplyResult":
         """Verify the submission result after form submission."""
         ...
+
+
+__all__ = [
+    "ATSFiller",
+]
