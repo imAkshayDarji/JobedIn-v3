@@ -23,7 +23,7 @@
 | Day 17 | Auto-Apply | Playwright Setup + ATS Detection | DONE | -- |
 | Day 18 | Auto-Apply | ATS Form Fillers | DONE | `6cd71be` |
 | Day 19 | Auto-Apply | Auto-Apply Orchestrator | DONE | -- |
-| Day 20 | Auto-Apply | Apply Frontend | TODO | -- |
+| Day 20 | Auto-Apply | Apply Frontend | DONE | -- |
 | Day 21 | Polish | Error Handling + Edge Cases | TODO | -- |
 | Day 22 | Polish | Testing | TODO | -- |
 | Day 23 | Polish | Deployment + Documentation | TODO | -- |
@@ -678,6 +678,15 @@ Step 4: VALIDATE (ATS scoring)
 - Queue visualization: "3 jobs in queue, applying to #2..."
 - Result summary: X succeeded, Y failed, Z need manual attention
 - Manual fallback: opens source URL in new tab for user to apply themselves
+
+#### Day 20 Completion Notes
+- **Frontend types:** `types/apply.ts` (NEW) — ApplyStep, request/response types matching backend `schemas/apply.py`, SSE event type, step labels/constants; `types/application.ts` updated with 4 new statuses (`applying`, `applied_with_issues`, `manual_required`, `failed`) and extracted shared `STATUS_STYLES` + `COLUMN_COLORS`
+- **API client:** `lib/api/apply.ts` (NEW) — `applySingle`, `applyBulk` (validates max 10), `getApplyStatus`, `getBulkApplyStatus`, `connectApplyStream` (SSE via fetch ReadableStream with auth header injection, exponential backoff retry up to 3x, automatic fallback to polling every 3s on stream failure); `lib/api.ts` updated to export `getAuthHeaders`
+- **Components (new):** `ApplyStepProgress.tsx` — 7-step vertical indicator (checkmark/spinner/empty circle); `ApplyModal.tsx` — SSE real-time step progress, resume-in-progress reconnect, retry on fail, screenshot viewer, manual fallback link, close confirmation with background-continue messaging; `BulkApplyModal.tsx` — confirmation screen, 2s polling with queue visualization, progress bar, per-job status list, result summary with manual action buttons, background polling with toast notification
+- **Components (updated):** `ApplicationCard.tsx` — shared STATUS_STYLES, selectable/selected props for bulk mode; `PipelineColumn.tsx` — shared COLUMN_COLORS, selectable/selectedIds props; `ApplicationDetailModal.tsx` — "Auto Apply" button for `ready`, "Apply Manually" for `manual_required`, updated NEXT_STATUSES, double-click guard, opens ApplyModal
+- **Pages (updated):** `applications/page.tsx` — `applying` and `applied_with_issues` added to pipeline columns, `manual_required` and `failed` added to terminal section, bulk apply mode with select-all (max 10), "Bulk Apply" toggle with empty state guard, mobile responsive (full-screen on <640px); `jobs/[id]/page.tsx` — "Auto Apply" button when job is saved, double-click guard
+- **Pipeline columns:** 9 pipeline stages (saved → generating → ready → applying → applied → applied_with_issues → screening → interview → offer) + 4 terminal (manual_required, failed, rejected, withdrawn) in collapsible section
+- **TypeScript:** 0 errors; **Build:** passes; **Linter:** 0 errors
 
 ---
 

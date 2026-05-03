@@ -1,22 +1,14 @@
 import { MapPin, Banknote, ExternalLink } from "lucide-react";
 import type { ApplicationListItem } from "@/types/application";
+import { STATUS_STYLES } from "@/types/application";
 
 interface ApplicationCardProps {
   application: ApplicationListItem;
   onClick: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 }
-
-const STATUS_STYLES: Record<string, string> = {
-  saved: "bg-gray-100 text-gray-700",
-  generating: "bg-yellow-100 text-yellow-800",
-  ready: "bg-blue-100 text-blue-800",
-  applied: "bg-indigo-100 text-indigo-800",
-  screening: "bg-purple-100 text-purple-800",
-  interview: "bg-cyan-100 text-cyan-800",
-  offer: "bg-green-100 text-green-800",
-  rejected: "bg-red-100 text-red-800",
-  withdrawn: "bg-gray-100 text-gray-500",
-};
 
 function getSourceBadge(source: string) {
   const colors: Record<string, string> = {
@@ -41,22 +33,41 @@ function getScoreColor(score: number): string {
   return "text-red-600";
 }
 
-export function ApplicationCard({ application, onClick }: ApplicationCardProps) {
+export function ApplicationCard({
+  application,
+  onClick,
+  selectable = false,
+  selected = false,
+  onSelect,
+}: ApplicationCardProps) {
   const { job, match_score } = application;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full text-left rounded-lg border border-gray-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+    <div
+      className={`w-full text-left rounded-lg border bg-white p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer ${
+        selected ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-200"
+      }`}
+      onClick={selectable ? onSelect : onClick}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-1.5">
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={(e) => {
+                e.stopPropagation();
+                onSelect?.();
+              }}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
           {getSourceBadge(job.source)}
           <span
             className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_STYLES[application.status] || "bg-gray-100 text-gray-700"}`}
           >
-            {application.status}
+            {application.status.replace(/_/g, " ")}
           </span>
         </div>
         {match_score != null && (
@@ -98,8 +109,8 @@ export function ApplicationCard({ application, onClick }: ApplicationCardProps) 
             <span className="inline-block w-2 h-2 rounded-full bg-purple-400" title="Interview prep linked" />
           )}
         </div>
-        <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+        {!selectable && <ExternalLink className="w-3.5 h-3.5 text-gray-400" />}
       </div>
-    </button>
+    </div>
   );
 }

@@ -11,7 +11,7 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
+export async function getAuthHeaders(): Promise<Record<string, string>> {
   const supabase = createClient();
   const {
     data: { session },
