@@ -60,5 +60,14 @@ class Settings(BaseSettings):
     ATS_APPLY_STALE_MINUTES: int = 15
     ATS_RESUME_FILE_FORMAT: str = "txt"
 
+    CORS_ORIGINS: str = "http://localhost:3000"
+    MAX_UPLOAD_SIZE_MB: int = 10
+
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_AUTH: str = "10/minute"
+    RATE_LIMIT_AI: str = "5/minute"
+    RATE_LIMIT_APPLY: str = "5/minute"
+
 
 settings = Settings()

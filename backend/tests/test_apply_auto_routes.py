@@ -4,16 +4,30 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.requests import Request as StarletteRequest
 
 from app.config import settings
 from app.models.application import Application
 from app.models.base import ApplicationStatus
 from app.schemas.apply import ApplySingleRequest, ApplyBulkRequest
 
+
+def _make_mock_request():
+    scope = {"type": "http", "method": "POST", "path": "/api/apply/single", "query_string": b"", "headers": []}
+    return StarletteRequest(scope)
+
 TEST_JWT_SECRET = "test-jwt-secret-for-testing-only-min-32-chars!!"
 TEST_SUPABASE_URL = "https://test.supabase.co"
 TEST_USER_ID = str(uuid.uuid4())
 OTHER_USER_ID = str(uuid.uuid4())
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting():
+    from app.middleware.rate_limit import limiter
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
 
 
 def _mint_jwt(
@@ -84,7 +98,7 @@ class TestApplySingleSuccess:
         mock_arq_pool.close = AsyncMock()
 
         with patch("app.routes.apply.arq_create_pool", return_value=mock_arq_pool):
-            response = await apply_single(request, user, mock_session)
+            response = await apply_single(_make_mock_request(), request, user, mock_session)
 
         assert response.application_id == app_id
         assert response.task_id == "test_task_123"
@@ -114,7 +128,7 @@ class TestApplySingleNotReady:
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            await apply_single(request, user, mock_session)
+            await apply_single(_make_mock_request(), request, user, mock_session)
         assert exc_info.value.status_code == 409
 
 
@@ -142,7 +156,7 @@ class TestApplySingleNotOwned:
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            await apply_single(request, user, mock_session)
+            await apply_single(_make_mock_request(), request, user, mock_session)
         assert exc_info.value.status_code == 403
 
 
@@ -162,7 +176,7 @@ class TestApplySingleNotFound:
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            await apply_single(request, user, mock_session)
+            await apply_single(_make_mock_request(), request, user, mock_session)
         assert exc_info.value.status_code == 404
 
 
@@ -190,7 +204,7 @@ class TestApplySingleEnqueueFails:
             from fastapi import HTTPException
 
             with pytest.raises(HTTPException) as exc_info:
-                await apply_single(request, user, mock_session)
+                await apply_single(_make_mock_request(), request, user, mock_session)
             assert exc_info.value.status_code == 502
 
         assert application.status == ApplicationStatus.ready
@@ -224,7 +238,7 @@ class TestApplyBulkSuccess:
 
         with patch("app.routes.apply.arq_create_pool", return_value=mock_arq_pool), \
              patch("app.routes.apply._get_raw_redis", return_value=mock_redis):
-            response = await apply_bulk(request, user, mock_session)
+            response = await apply_bulk(_make_mock_request(), request, user, mock_session)
 
         assert response.bulk_task_id.startswith("apply_bulk_")
         assert len(response.application_ids) == 2
@@ -269,7 +283,7 @@ class TestApplyBulkMixedStatus:
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            await apply_bulk(request, user, mock_session)
+            await apply_bulk(_make_mock_request(), request, user, mock_session)
         assert exc_info.value.status_code == 400
 
 

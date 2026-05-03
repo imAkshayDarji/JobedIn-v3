@@ -1,9 +1,13 @@
+import * as Sentry from "@sentry/nextjs";
+import { toast } from "sonner";
+
 import { createClient } from "@/lib/supabase/client";
 
 interface ApiError {
   status: number;
   message: string;
   detail?: string;
+  code?: string;
 }
 
 interface RequestOptions {
@@ -28,6 +32,12 @@ function getBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
 
+function handle401(): void {
+  toast.error("Session expired. Please sign in again.");
+  const redirectPath = window.location.pathname;
+  window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectPath)}`;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const error: ApiError = {
@@ -37,9 +47,34 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
     try {
       const body = await response.json();
-      error.detail = body.detail ?? JSON.stringify(body);
+      error.detail = body.detail ?? body.error?.message ?? JSON.stringify(body);
+      error.code = body.error?.code;
     } catch {
       error.detail = await response.text();
+    }
+
+    Sentry.addBreadcrumb({
+      category: "api",
+      message: `${response.status} ${response.url}`,
+      level: response.status >= 500 ? "error" : "warning",
+      data: {
+        status: response.status,
+        url: response.url,
+      },
+    });
+
+    if (response.status === 401) {
+      handle401();
+      throw error;
+    }
+
+    if (response.status === 403) {
+      toast.error("You do not have permission to perform this action.");
+    } else if (response.status === 429) {
+      toast.warning("Too many requests. Please slow down and try again.");
+    } else if (response.status >= 500) {
+      Sentry.captureException(new Error(`API ${response.status}: ${error.detail}`));
+      toast.error("Something went wrong. Please try again later.");
     }
 
     throw error;

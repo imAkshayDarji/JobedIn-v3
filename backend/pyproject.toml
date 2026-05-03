@@ -21,6 +21,7 @@ dependencies = [
     "playwright==1.49.0",
     "beautifulsoup4==4.12.3",
     "rapidfuzz>=3.12.2",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]

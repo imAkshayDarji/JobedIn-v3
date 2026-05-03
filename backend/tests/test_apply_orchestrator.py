@@ -4,6 +4,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.requests import Request as StarletteRequest
 
 from app.models.base import ApplicationStatus
 from app.schemas.apply import ApplyOrchestratorResult
@@ -11,6 +12,19 @@ from app.schemas.apply import ApplyOrchestratorResult
 TEST_USER_ID = uuid.uuid4()
 TEST_JOB_ID = uuid.uuid4()
 TEST_APPLICATION_ID = uuid.uuid4()
+
+
+def _make_mock_request():
+    scope = {"type": "http", "method": "POST", "path": "/api/apply/single", "query_string": b"", "headers": []}
+    return StarletteRequest(scope)
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting():
+    from app.middleware.rate_limit import limiter
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
 
 
 def _make_application(
@@ -465,7 +479,7 @@ class TestEnqueueFailsRevertsStatus:
         with patch("app.routes.apply.arq_create_pool", side_effect=Exception("ARQ down")):
             from fastapi import HTTPException
             with pytest.raises(HTTPException) as exc_info:
-                await apply_single(request, user, mock_session)
+                await apply_single(_make_mock_request(), request, user, mock_session)
             assert exc_info.value.status_code == 502
 
         assert application.status == ApplicationStatus.ready

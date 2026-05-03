@@ -1,18 +1,20 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.database import get_async_session
+from app.middleware.rate_limit import limiter
 from app.models.candidate import CandidateProfile
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/me")
-async def get_me(user: CurrentUser = Depends(get_current_user)) -> dict:
+@limiter.limit("10/minute")
+async def get_me(request: Request, user: CurrentUser = Depends(get_current_user)) -> dict:
     return {
         "id": str(user.id),
         "email": user.email,
@@ -21,7 +23,8 @@ async def get_me(user: CurrentUser = Depends(get_current_user)) -> dict:
 
 
 @router.get("/verify")
-async def verify_token(user: CurrentUser = Depends(get_current_user)) -> dict:
+@limiter.limit("10/minute")
+async def verify_token(request: Request, user: CurrentUser = Depends(get_current_user)) -> dict:
     return {
         "valid": True,
         "user": {
@@ -33,7 +36,9 @@ async def verify_token(user: CurrentUser = Depends(get_current_user)) -> dict:
 
 
 @router.post("/sync-profile")
+@limiter.limit("10/minute")
 async def sync_profile(
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:

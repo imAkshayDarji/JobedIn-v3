@@ -5,13 +5,15 @@ from datetime import datetime, timedelta
 
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi.util import get_remote_address
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings as app_settings
 from app.database import get_async_session
+from app.middleware.rate_limit import limiter
 from app.models.candidate import CandidateProfile
 from app.models.interview import InterviewPrep, InterviewSession
 from app.models.job import Job
@@ -143,21 +145,23 @@ def _pick_next_question(
 
 
 @router.post("/setup", response_model=InterviewSetupResponse)
+@limiter.limit("5/minute")
 async def setup_interview_prep(
-    request: InterviewSetupRequest,
+    request: Request,
+    body: InterviewSetupRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> InterviewSetupResponse:
     profile = await _resolve_profile(user.id, session)
 
     job_description: str | None = None
-    job_id: uuid.UUID | None = request.job_id
+    job_id: uuid.UUID | None = body.job_id
     job_title: str | None = None
     company_name: str | None = None
 
-    if request.job_id:
+    if body.job_id:
         job_result = await session.execute(
-            select(Job).where(Job.id == request.job_id)
+            select(Job).where(Job.id == body.job_id)
         )
         job = job_result.scalar_one_or_none()
         if job is None:
@@ -169,9 +173,9 @@ async def setup_interview_prep(
         job_title = job.title
         company_name = job.company
     else:
-        job_description = request.job_description
-        job_title = request.job_title
-        company_name = request.company_name
+        job_description = body.job_description
+        job_title = body.job_title
+        company_name = body.company_name
 
     if job_id:
         cutoff = datetime.utcnow() - timedelta(minutes=DEDUP_WINDOW_MINUTES)

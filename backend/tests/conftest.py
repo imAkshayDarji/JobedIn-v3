@@ -46,10 +46,14 @@ def mint_jwt(
 
 @pytest.fixture(autouse=True)
 def _set_test_settings():
+    from app.middleware.rate_limit import limiter
+
     with patch.object(settings, "SUPABASE_JWT_SECRET", TEST_JWT_SECRET), patch.object(
         settings, "SUPABASE_URL", TEST_SUPABASE_URL
-    ):
+    ), patch.object(settings, "RATE_LIMIT_ENABLED", False):
+        limiter.enabled = False
         yield
+        limiter.enabled = settings.RATE_LIMIT_ENABLED
 
 
 @pytest.fixture

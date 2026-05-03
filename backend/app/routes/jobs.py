@@ -46,6 +46,10 @@ VALID_SORT_FIELDS = {"match_score", "created_at", "salary_max"}
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
+def escape_ilike(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _get_redis_settings() -> RedisSettings:
     url = app_settings.REDIS_URL
     host = url.split("@")[-1].split(":")[0] if "@" in url else "localhost"
@@ -308,10 +312,11 @@ def _job_list_filters(
         except ValueError:
             pass
     if search:
+        escaped = escape_ilike(search)
         clauses.append(
             or_(
-                Job.title.ilike(f"%{search}%"),
-                Job.company.ilike(f"%{search}%"),
+                Job.title.ilike(f"%{escaped}%"),
+                Job.company.ilike(f"%{escaped}%"),
             )
         )
     if experience_level:

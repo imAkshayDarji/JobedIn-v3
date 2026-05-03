@@ -166,21 +166,7 @@ async def _get_stats(
             extra={"user_id": str(uid)},
             exc_info=True,
         )
-        return DashboardStats(
-            jobs_matched=0,
-            high_match_count=0,
-            avg_match_score=None,
-            applications_count=0,
-            applications_by_status={},
-            resumes_count=0,
-            resumes_completed=0,
-            avg_ats_score=None,
-            cover_letters_count=0,
-            interview_preps_count=0,
-            interview_sessions_count=0,
-            interview_sessions_completed=0,
-            avg_session_score=None,
-        )
+        raise
 
     return DashboardStats(
         jobs_matched=jobs_matched,
