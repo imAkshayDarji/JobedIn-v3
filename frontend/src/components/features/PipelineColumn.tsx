@@ -1,28 +1,23 @@
 import type { ApplicationListItem } from "@/types/application";
+import { COLUMN_COLORS } from "@/types/application";
 import { ApplicationCard } from "./ApplicationCard";
 
 interface PipelineColumnProps {
   status: string;
   applications: ApplicationListItem[];
   onApplicationClick: (application: ApplicationListItem) => void;
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onSelect?: (id: string) => void;
 }
-
-const COLUMN_COLORS: Record<string, string> = {
-  saved: "border-t-gray-400",
-  generating: "border-t-yellow-400",
-  ready: "border-t-blue-400",
-  applied: "border-t-indigo-400",
-  screening: "border-t-purple-400",
-  interview: "border-t-cyan-400",
-  offer: "border-t-green-400",
-  rejected: "border-t-red-400",
-  withdrawn: "border-t-gray-300",
-};
 
 export function PipelineColumn({
   status,
   applications,
   onApplicationClick,
+  selectable = false,
+  selectedIds,
+  onSelect,
 }: PipelineColumnProps) {
   return (
     <div
@@ -30,7 +25,7 @@ export function PipelineColumn({
     >
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-200">
         <h3 className="text-sm font-semibold text-gray-700 capitalize">
-          {status}
+          {status.replace(/_/g, " ")}
         </h3>
         <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-600">
           {applications.length}
@@ -50,6 +45,9 @@ export function PipelineColumn({
               key={app.id}
               application={app}
               onClick={() => onApplicationClick(app)}
+              selectable={selectable}
+              selected={selectedIds?.has(app.id) ?? false}
+              onSelect={() => onSelect?.(app.id)}
             />
           ))
         )}

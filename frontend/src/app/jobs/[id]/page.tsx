@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { JobMatchScore } from "@/components/features/JobMatchScore";
+import { ApplyModal } from "@/components/features/ApplyModal";
 import { getJob, getJobScore, saveJob, unsaveJob } from "@/lib/api/jobs";
 import type { JobDetail, MatchBreakdown } from "@/types/job";
 
@@ -21,6 +22,8 @@ export default function JobDetailPage() {
   const [missingSkills, setMissingSkills] = useState<string[]>([]);
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [applyTriggered, setApplyTriggered] = useState(false);
 
   useEffect(() => {
     loadJob();
@@ -77,6 +80,12 @@ export default function JobDetailPage() {
         setSaveError(previousSaved ? "Failed to unsave job." : "Failed to save job.");
       }
     }
+  }
+
+  function handleAutoApply() {
+    if (applyTriggered) return;
+    setApplyTriggered(true);
+    setShowApplyModal(true);
   }
 
   if (loading) {
@@ -201,7 +210,20 @@ export default function JobDetailPage() {
               </div>
             )}
 
-            <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
+            <div className="flex items-center gap-3 pt-4 border-t border-gray-200 flex-wrap">
+              {isSaved && (
+                <button
+                  type="button"
+                  onClick={handleAutoApply}
+                  disabled={applyTriggered}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                  </svg>
+                  Auto Apply
+                </button>
+              )}
               {job.apply_url && (
                 <a
                   href={job.apply_url}
@@ -266,6 +288,23 @@ export default function JobDetailPage() {
           </div>
         </div>
       </div>
+
+      {showApplyModal && job && (
+        <ApplyModal
+          applicationId={jobId}
+          jobTitle={job.title}
+          companyName={job.company}
+          onClose={() => {
+            setShowApplyModal(false);
+            setApplyTriggered(false);
+          }}
+          onCompleted={() => {
+            setShowApplyModal(false);
+            setApplyTriggered(false);
+            loadJob();
+          }}
+        />
+      )}
     </AppLayout>
   );
 }

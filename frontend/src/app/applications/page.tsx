@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PipelineColumn } from "@/components/features/PipelineColumn";
 import { ApplicationDetailModal } from "@/components/features/ApplicationDetailModal";
+import { BulkApplyModal } from "@/components/features/BulkApplyModal";
 import { listApplications, getApplication, getApplicationStats } from "@/lib/api/applications";
 import type {
   ApplicationListItem,
@@ -17,13 +18,20 @@ const PIPELINE_STATUSES: ApplicationStatus[] = [
   "saved",
   "generating",
   "ready",
+  "applying",
   "applied",
+  "applied_with_issues",
   "screening",
   "interview",
   "offer",
 ];
 
-const TERMINAL_STATUSES: ApplicationStatus[] = ["rejected", "withdrawn"];
+const TERMINAL_STATUSES: ApplicationStatus[] = [
+  "manual_required",
+  "failed",
+  "rejected",
+  "withdrawn",
+];
 
 type ViewMode = "pipeline" | "list";
 
@@ -38,6 +46,10 @@ export default function ApplicationsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("pipeline");
   const [selectedApplication, setSelectedApplication] = useState<ApplicationDetail | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
+
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -83,6 +95,10 @@ export default function ApplicationsPage() {
   }
 
   async function handleApplicationClick(app: ApplicationListItem) {
+    if (bulkMode) {
+      toggleSelect(app.id);
+      return;
+    }
     try {
       const detail = await getApplication(app.id);
       setSelectedApplication(detail);
@@ -109,6 +125,50 @@ export default function ApplicationsPage() {
     return applications.filter((a) => a.status === status);
   }
 
+  const readyApps = getApplicationsByStatus("ready");
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= 10) return prev;
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function handleSelectAllReady() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const readyIds = readyApps.map((a) => a.id);
+      const allSelected = readyIds.every((id) => next.has(id));
+
+      if (allSelected) {
+        readyIds.forEach((id) => next.delete(id));
+      } else {
+        const toAdd = readyIds.filter((id) => !next.has(id));
+        const available = 10 - next.size;
+        toAdd.slice(0, available).forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  function handleBulkApply() {
+    setShowBulkModal(true);
+  }
+
+  const selectedJobs = applications
+    .filter((a) => selectedIds.has(a.id))
+    .map((a) => ({
+      id: a.id,
+      title: a.job.title,
+      company: a.job.company,
+    }));
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-[1600px] px-6 py-8">
@@ -119,13 +179,63 @@ export default function ApplicationsPage() {
               {stats ? `${stats.total} total` : "Loading..."}
             </p>
           </div>
-          <Link
-            href="/jobs"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-          >
-            Discover Jobs
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setBulkMode(!bulkMode);
+                setSelectedIds(new Set());
+              }}
+              disabled={readyApps.length === 0}
+              title={readyApps.length === 0 ? "No ready applications to apply to" : undefined}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                bulkMode
+                  ? "bg-orange-600 text-white hover:bg-orange-700"
+                  : readyApps.length === 0
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              {bulkMode ? "Cancel" : "Bulk Apply"}
+            </button>
+            <Link
+              href="/jobs"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              Discover Jobs
+            </Link>
+          </div>
         </div>
+
+        {bulkMode && (
+          <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSelectAllReady}
+                className="text-sm font-medium text-orange-700 hover:text-orange-800 underline"
+              >
+                Select All Ready ({readyApps.length})
+              </button>
+              {readyApps.length > 10 && (
+                <span className="text-xs text-orange-600">
+                  Max 10 at a time
+                </span>
+              )}
+              <span className="text-sm text-orange-700">
+                {selectedIds.size} selected
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleBulkApply}
+              disabled={selectedIds.size === 0}
+              className="rounded-md bg-orange-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Apply to Selected ({selectedIds.size})
+            </button>
+          </div>
+        )}
 
         {stats && stats.total > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
@@ -142,7 +252,7 @@ export default function ApplicationsPage() {
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                <span className="capitalize">{status}</span>
+                <span className="capitalize">{status.replace(/_/g, " ")}</span>
                 <span className="font-semibold">{count}</span>
               </button>
             ))}
@@ -233,6 +343,13 @@ export default function ApplicationsPage() {
               Save jobs to start tracking your applications.
             </p>
           </div>
+        ) : bulkMode && readyApps.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-gray-500">No ready applications to apply to.</p>
+            <p className="text-sm text-gray-400 mt-2">
+              Applications need to be in &quot;ready&quot; status before you can auto-apply.
+            </p>
+          </div>
         ) : viewMode === "pipeline" ? (
           <>
             <div className="flex gap-4 overflow-x-auto pb-4">
@@ -242,21 +359,27 @@ export default function ApplicationsPage() {
                   status={status}
                   applications={getApplicationsByStatus(status)}
                   onApplicationClick={handleApplicationClick}
+                  selectable={bulkMode && status === "ready"}
+                  selectedIds={selectedIds}
+                  onSelect={toggleSelect}
                 />
               ))}
             </div>
 
-            {(getApplicationsByStatus("rejected").length > 0 ||
-              getApplicationsByStatus("withdrawn").length > 0) && (
+            {TERMINAL_STATUSES.some(
+              (s) => getApplicationsByStatus(s).length > 0,
+            ) && (
               <div className="mt-6">
                 <button
                   type="button"
                   onClick={() => setShowTerminal(!showTerminal)}
                   className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
                 >
-                  {showTerminal ? "Hide" : "Show"} Rejected & Withdrawn (
-                  {getApplicationsByStatus("rejected").length +
-                    getApplicationsByStatus("withdrawn").length}
+                  {showTerminal ? "Hide" : "Show"} Terminal (
+                  {TERMINAL_STATUSES.reduce(
+                    (sum, s) => sum + getApplicationsByStatus(s).length,
+                    0,
+                  )}
                   )
                 </button>
                 {showTerminal && (
@@ -289,7 +412,7 @@ export default function ApplicationsPage() {
                         {app.job.title}
                       </h3>
                       <span className="text-xs text-gray-500 capitalize ml-2 flex-shrink-0">
-                        {app.status}
+                        {app.status.replace(/_/g, " ")}
                       </span>
                     </div>
                     <p className="text-xs text-gray-600">{app.job.company}</p>
@@ -316,6 +439,21 @@ export default function ApplicationsPage() {
             onClose={handleCloseModal}
             onUpdated={handleUpdated}
             onDeleted={handleDeleted}
+          />
+        )}
+
+        {showBulkModal && selectedJobs.length > 0 && (
+          <BulkApplyModal
+            applicationIds={Array.from(selectedIds)}
+            jobs={selectedJobs}
+            onClose={() => {
+              setShowBulkModal(false);
+              setBulkMode(false);
+              setSelectedIds(new Set());
+            }}
+            onCompleted={() => {
+              loadData();
+            }}
           />
         )}
       </div>
