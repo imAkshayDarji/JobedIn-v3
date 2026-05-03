@@ -4,13 +4,15 @@ from datetime import datetime, timedelta, timezone
 
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi.util import get_remote_address
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings as app_settings
 from app.database import get_async_session
+from app.middleware.rate_limit import limiter
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.models.resume import Resume
@@ -85,21 +87,23 @@ async def _check_ownership(resume: Resume, user: CurrentUser) -> None:
 
 
 @router.post("/generate", response_model=ResumeGenerateResponse)
+@limiter.limit("5/minute")
 async def generate_resume(
-    request: ResumeGenerateRequest,
+    request: Request,
+    body: ResumeGenerateRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> ResumeGenerateResponse:
     profile = await _resolve_profile(user.id, session)
 
     job_description: str | None = None
-    job_id: uuid.UUID | None = request.job_id
+    job_id: uuid.UUID | None = body.job_id
     job_title: str | None = None
     company_name: str | None = None
 
-    if request.job_id:
+    if body.job_id:
         job_result = await session.execute(
-            select(Job).where(Job.id == request.job_id)
+            select(Job).where(Job.id == body.job_id)
         )
         job = job_result.scalar_one_or_none()
         if job is None:
@@ -111,7 +115,7 @@ async def generate_resume(
         job_title = job.title
         company_name = job.company
     else:
-        job_description = request.job_description
+        job_description = body.job_description
 
     # Dedup guard
     if job_id:
@@ -174,8 +178,10 @@ async def generate_resume(
 
 
 @router.post("/generate-manual", response_model=ResumeGenerateResponse)
+@limiter.limit("5/minute")
 async def generate_resume_manual(
-    request: ResumeGenerateManualRequest,
+    request: Request,
+    body: ResumeGenerateManualRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> ResumeGenerateResponse:
@@ -191,7 +197,7 @@ async def generate_resume_manual(
     await session.refresh(resume)
 
     try:
-        await _enqueue_resume_job(str(resume.id), str(user.id), str(profile.id), request.job_description)
+        await _enqueue_resume_job(str(resume.id), str(user.id), str(profile.id), body.job_description)
     except Exception as exc:
         logger.error(f"Failed to enqueue ARQ job: {exc}", extra={"resume_id": str(resume.id)})
         resume.status = "failed"
@@ -207,7 +213,7 @@ async def generate_resume_manual(
             "user_id": str(user.id),
             "candidate_profile_id": str(profile.id),
             "resume_id": str(resume.id),
-            "description_length": len(request.job_description),
+            "description_length": len(body.job_description),
         },
     )
 

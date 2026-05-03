@@ -49,11 +49,25 @@ async def upload_resume(
             detail="Only PDF files are accepted",
         )
 
-    content = await file.read()
+    if file.content_type and file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only PDF files are accepted",
+        )
+
+    from app.config import settings as app_settings
+
+    max_bytes = app_settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    content = await file.read(max_bytes + 1)
     if len(content) == 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Uploaded file is empty",
+        )
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"File too large. Maximum size is {app_settings.MAX_UPLOAD_SIZE_MB}MB.",
         )
 
     try:
@@ -66,11 +80,11 @@ async def upload_resume(
             if page_text:
                 text_parts.append(page_text)
         extracted_text = "\n".join(text_parts)
-    except Exception as exc:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Failed to parse PDF: {exc}",
-        ) from exc
+            detail="Failed to parse PDF. Please ensure the file is a valid PDF document.",
+        )
 
     return {
         "extracted_text": extracted_text,

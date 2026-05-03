@@ -33,6 +33,10 @@ VALID_SORT_FIELDS = {"created_at", "updated_at", "applied_at"}
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 
+def escape_ilike(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _job_to_job_info(job: Job) -> ApplicationJobInfo:
     return ApplicationJobInfo(
         id=job.id,
@@ -100,7 +104,7 @@ async def list_applications(
             )
 
     if company:
-        clauses.append(Job.company.ilike(f"%{company}%"))
+        clauses.append(Job.company.ilike(f"%{escape_ilike(company)}%"))
 
     stmt = (
         select(

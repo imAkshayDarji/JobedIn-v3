@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi.util import get_remote_address
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings as app_settings
 from app.database import get_async_session
+from app.middleware.rate_limit import limiter
 from app.models.candidate import CandidateProfile
 from app.models.cover_letter import CoverLetter
 from app.models.job import Job
@@ -87,19 +89,21 @@ async def _check_ownership(cover_letter: CoverLetter, user: CurrentUser) -> None
 
 
 @router.post("/generate", response_model=CoverLetterGenerateResponse)
+@limiter.limit("5/minute")
 async def generate_cover_letter(
-    request: CoverLetterGenerateRequest,
+    request: Request,
+    body: CoverLetterGenerateRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> CoverLetterGenerateResponse:
     profile = await _resolve_profile(user.id, session)
 
     job_description: str | None = None
-    job_id: uuid.UUID | None = request.job_id
+    job_id: uuid.UUID | None = body.job_id
 
-    if request.job_id:
+    if body.job_id:
         job_result = await session.execute(
-            select(Job).where(Job.id == request.job_id)
+            select(Job).where(Job.id == body.job_id)
         )
         job = job_result.scalar_one_or_none()
         if job is None:
@@ -109,7 +113,7 @@ async def generate_cover_letter(
             )
         job_description = job.description or ""
     else:
-        job_description = request.job_description
+        job_description = body.job_description
 
     # Dedup guard
     if job_id:
@@ -133,7 +137,7 @@ async def generate_cover_letter(
                 content_json=existing.content_json,
             )
 
-    tone = request.tone or "professional"
+    tone = body.tone or "professional"
     cover_letter = CoverLetter(
         user_id=user.id,
         job_id=job_id,
@@ -176,18 +180,20 @@ async def generate_cover_letter(
 
 
 @router.post("/generate-manual", response_model=CoverLetterGenerateResponse)
+@limiter.limit("5/minute")
 async def generate_cover_letter_manual(
-    request: CoverLetterGenerateManualRequest,
+    request: Request,
+    body: CoverLetterGenerateManualRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> CoverLetterGenerateResponse:
     profile = await _resolve_profile(user.id, session)
 
-    tone = request.tone or "professional"
+    tone = body.tone or "professional"
     cover_letter = CoverLetter(
         user_id=user.id,
         job_id=None,
-        job_description=request.job_description,
+        job_description=body.job_description,
         tone=tone,
         status="generating",
     )
@@ -197,7 +203,7 @@ async def generate_cover_letter_manual(
 
     try:
         await _enqueue_cover_letter_job(
-            str(cover_letter.id), str(user.id), str(profile.id), request.job_description, tone
+            str(cover_letter.id), str(user.id), str(profile.id), body.job_description, tone
         )
     except Exception as exc:
         logger.error(f"Failed to enqueue ARQ job: {exc}", extra={"cover_letter_id": str(cover_letter.id)})
@@ -214,7 +220,7 @@ async def generate_cover_letter_manual(
             "user_id": str(user.id),
             "candidate_profile_id": str(profile.id),
             "cover_letter_id": str(cover_letter.id),
-            "description_length": len(request.job_description),
+            "description_length": len(body.job_description),
             "tone": tone,
         },
     )

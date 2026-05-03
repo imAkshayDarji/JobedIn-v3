@@ -6,8 +6,9 @@ import uuid
 
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
+from slowapi.util import get_remote_address
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import CurrentUser, get_current_user
 from app.config import settings
 from app.database import get_async_session
+from app.middleware.rate_limit import limiter
 from app.models.application import Application
 from app.models.base import ApplicationStatus
 from app.models.job import Job
@@ -247,12 +249,14 @@ async def get_detection_screenshot(
 
 
 @apply_router.post("/single", response_model=ApplySingleResponse)
+@limiter.limit("5/minute")
 async def apply_single(
-    request: ApplySingleRequest,
+    request: Request,
+    body: ApplySingleRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> ApplySingleResponse:
-    application = await _validate_application_ownership(session, request.application_id, user.id)
+    application = await _validate_application_ownership(session, body.application_id, user.id)
 
     if application.status != ApplicationStatus.ready:
         raise HTTPException(
@@ -299,19 +303,21 @@ async def apply_single(
 
 
 @apply_router.post("/bulk", response_model=ApplyBulkResponse)
+@limiter.limit("5/minute")
 async def apply_bulk(
-    request: ApplyBulkRequest,
+    request: Request,
+    body: ApplyBulkRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> ApplyBulkResponse:
-    if len(request.application_ids) > settings.ATS_APPLY_MAX_BULK:
+    if len(body.application_ids) > settings.ATS_APPLY_MAX_BULK:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Maximum {settings.ATS_APPLY_MAX_BULK} applications per bulk request.",
         )
 
     applications: list[Application] = []
-    for app_id in request.application_ids:
+    for app_id in body.application_ids:
         result = await session.execute(
             select(Application).where(Application.id == app_id)
         )

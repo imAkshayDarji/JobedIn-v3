@@ -24,7 +24,7 @@
 | Day 18 | Auto-Apply | ATS Form Fillers | DONE | `6cd71be` |
 | Day 19 | Auto-Apply | Auto-Apply Orchestrator | DONE | -- |
 | Day 20 | Auto-Apply | Apply Frontend | DONE | -- |
-| Day 21 | Polish | Error Handling + Edge Cases | TODO | -- |
+| Day 21 | Polish | Error Handling + Edge Cases | DONE | -- |
 | Day 22 | Polish | Testing | TODO | -- |
 | Day 23 | Polish | Deployment + Documentation | TODO | -- |
 
@@ -688,6 +688,41 @@ Step 4: VALIDATE (ATS scoring)
 - **Pipeline columns:** 9 pipeline stages (saved → generating → ready → applying → applied → applied_with_issues → screening → interview → offer) + 4 terminal (manual_required, failed, rejected, withdrawn) in collapsible section
 - **TypeScript:** 0 errors; **Build:** passes; **Linter:** 0 errors
 
+#### Day 21 Completion Notes
+- **WP1: Standardized Error Response Schema + Global Exception Handler**
+  - `backend/app/schemas/errors.py` (NEW) — `ErrorDetail` + `ErrorResponse` Pydantic schemas with `code`, `message`, `field` (optional), `request_id`
+  - `backend/app/middleware/error_handler.py` (NEW) — `ErrorHandlerMiddleware` with `_ERROR_CODE_MAP` (status code -> error code string), `_handle_validation_error` (422 -> field-level details), `_handle_unexpected_error` (500 -> Sentry capture + generic message)
+  - `backend/app/routes/dashboard.py` — Removed catch-all that returned zeroed `DashboardStats` on DB failure; now lets global handler standardize the error
+- **WP2: Rate Limiting**
+  - `backend/app/middleware/rate_limit.py` (NEW) — SlowAPI `Limiter` with custom `_key_func` (user.id or X-Forwarded-For), `rate_limit_exceeded_handler` returning structured `ErrorResponse` + `Retry-After` header
+  - `backend/pyproject.toml` — Added `slowapi>=0.1.9`
+  - `backend/app/config.py` — Added `RATE_LIMIT_ENABLED`, `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_AUTH`, `RATE_LIMIT_AI`, `RATE_LIMIT_APPLY`
+  - Applied `@limiter.limit("10/minute")` to auth routes (`/me`, `/verify`, `/sync-profile`)
+  - Applied `@limiter.limit("5/minute")` to AI generation routes (`/resumes/generate`, `/resumes/generate-manual`, `/cover-letters/generate`, `/cover-letters/generate-manual`, `/interview/setup`) and apply routes (`/apply/single`, `/apply/bulk`)
+  - Route function signatures updated: `request: Request` (Starlette) + `body: PydanticModel` for SlowAPI compatibility (it looks for a parameter named `request` of type Starlette Request)
+  - `backend/tests/conftest.py` — `limiter.enabled = False` in autouse fixture; test files calling decorated functions directly have local autouse fixtures to disable limiter
+- **WP3: File Upload Limits + Validation Hardening**
+  - `backend/app/routes/onboarding.py` — Enforced `content_type == "application/pdf"`, `MAX_UPLOAD_SIZE_MB` check via `file.read(max_bytes + 1)`, wrapped PyPDF2 errors in generic `HTTPException`
+  - `backend/app/routes/jobs.py` + `backend/app/routes/applications.py` — Added `escape_ilike()` helper to prevent SQL wildcard injection in `ilike` filters
+  - `backend/app/config.py` — Added `MAX_UPLOAD_SIZE_MB` setting
+- **WP5: CORS Configuration + Security Headers**
+  - `backend/app/middleware/security_headers.py` (NEW) — `SecurityHeadersMiddleware` setting `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 0`, `Referrer-Policy: strict-origin-when-cross-origin`
+  - `backend/app/main.py` — `CORSMiddleware` `allow_origins` now reads from `settings.CORS_ORIGINS` (comma-separated env var)
+  - `backend/app/config.py` — Added `CORS_ORIGINS` setting
+- **WP4: Sentry Enrichment**
+  - `backend/app/main.py` — Added `_before_send` callback to Sentry init: scrubs `email`, `email_address`, `Authorization`, `Cookie` from event data and breadcrumbs (PII scrubbing)
+  - `frontend/src/lib/api.ts` — `Sentry.addBreadcrumb` for every API call; `Sentry.captureException` for 5xx errors
+- **WP7: Frontend Toast Notification System**
+  - `frontend/src/components/ui/toaster.tsx` (NEW) — Sonner `Toaster` wrapper (bottom-right, rich colors, close button, 5s duration)
+  - `frontend/src/app/layout.tsx` — Added `<Toaster />` to root layout
+- **WP6: Frontend Error Boundaries**
+  - `frontend/src/components/ui/ErrorDisplay.tsx` (NEW) — Reusable error display with Sentry capture, icon, title, "Try Again" button
+  - Created global `error.tsx` + `not-found.tsx` at app root
+  - Created route-specific `error.tsx` for: `dashboard`, `jobs`, `jobs/[id]`, `applications`, `resumes`, `resumes/[id]`, `cover-letters`, `cover-letters/[id]`, `interview`, `interview/[id]`, `profile`, `onboarding`
+- **WP8: Frontend 401/403 Auto-Redirect + Sentry Capture**
+  - `frontend/src/lib/api.ts` — `handle401()` function: toast "Session expired" + redirect to `/auth/login`; toast for 403 (permission denied), 429 (rate limited), 5xx (generic error); `ApiError` interface extended with `code` field; structured error parsing from backend `ErrorResponse`
+- **Verification:** 494 backend tests passing, 0 frontend TypeScript errors, clean production build
+
 ---
 
 ## Phase 6: Polish + Production (Days 21-23)
@@ -774,7 +809,12 @@ jobedin-v3/
 │   │   │   ├── ai_worker.py
 │   │   │   ├── job_worker.py         # LinkedIn discovery jobs
 │   │   │   └── apply_worker.py
+│   │   ├── middleware/
+│   │   │   ├── error_handler.py      # Global exception handler
+│   │   │   ├── rate_limit.py         # SlowAPI rate limiting
+│   │   │   └── security_headers.py   # Security headers middleware
 │   │   └── schemas/
+│   │       ├── errors.py             # Standardized error response schema
 │   ├── alembic/
 │   ├── tests/
 │   ├── requirements.txt
