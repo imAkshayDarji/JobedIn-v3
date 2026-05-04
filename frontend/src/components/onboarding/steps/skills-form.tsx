@@ -85,12 +85,12 @@ export function SkillsForm({ skills, onUpdate }: SkillsFormProps) {
                 placeholder="Skill name *"
                 value={skill.name}
                 onChange={(e) => updateSkill(index, "name", e.target.value)}
-                className="min-w-[150px] flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="min-w-[150px] flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
               />
               <select
                 value={skill.category ?? ""}
                 onChange={(e) => updateSkill(index, "category", e.target.value)}
-                className="min-w-[120px] rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="min-w-[120px] rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
               >
                 <option value="">Category</option>
                 {SKILL_CATEGORIES.map((cat) => (
@@ -104,7 +104,7 @@ export function SkillsForm({ skills, onUpdate }: SkillsFormProps) {
                 onChange={(e) =>
                   updateSkill(index, "proficiency", e.target.value)
                 }
-                className="min-w-[120px] rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="min-w-[120px] rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
               >
                 <option value="">Proficiency</option>
                 {PROFICIENCY_LEVELS.map((level) => (

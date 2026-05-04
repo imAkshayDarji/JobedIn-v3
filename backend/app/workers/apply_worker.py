@@ -10,6 +10,17 @@ from redis.asyncio import Redis
 from sqlalchemy import select, update
 
 from app.config import settings
+
+
+def _redis_settings_from_url(url: str) -> RedisSettings:
+    """Parse redis://host:port/db into RedisSettings."""
+    stripped = url.replace("redis://", "")
+    parts = stripped.split("/")
+    db = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    host_port = parts[0].split(":")
+    host = host_port[0] if host_port[0] else "localhost"
+    port = int(host_port[1]) if len(host_port) > 1 else 6379
+    return RedisSettings(host=host, port=port, database=db)
 from app.models.base import ApplicationStatus
 
 logger = logging.getLogger(__name__)
@@ -231,8 +242,4 @@ class ApplyWorkerSettings:
     ]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = RedisSettings(
-        host=settings.REDIS_URL.split("@")[-1].split(":")[0] if "@" in settings.REDIS_URL else "localhost",
-        port=int(settings.REDIS_URL.split(":")[-1].split("/")[0]) if ":" in settings.REDIS_URL else 6379,
-        database=int(settings.REDIS_URL.rstrip("/").split("/")[-1]) if "/" in settings.REDIS_URL else 0,
-    )
+    redis_settings = _redis_settings_from_url(settings.REDIS_URL)

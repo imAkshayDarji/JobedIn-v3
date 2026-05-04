@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 import jwt
@@ -7,6 +8,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import SQLModel
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class CurrentUser(SQLModel):
@@ -33,18 +36,21 @@ def _decode_token(token: str) -> dict:
             options={"verify_aud": False},
         )
     except jwt.ExpiredSignatureError:
+        logger.warning("JWT debug: token expired")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
         )
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        logger.warning("JWT debug: invalid token - %s: %s", type(e).__name__, e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail=f"Invalid token: {type(e).__name__}",
         )
 
     expected_issuer = f"{settings.SUPABASE_URL}/auth/v1"
     if settings.SUPABASE_URL and payload.get("iss") != expected_issuer:
+        logger.warning("JWT debug: issuer mismatch - expected=%s got=%s", expected_issuer, payload.get("iss"))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token issuer",
