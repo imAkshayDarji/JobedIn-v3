@@ -121,7 +121,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateEducation(index, "institution", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                     <input
                       type="text"
@@ -130,7 +130,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateEducation(index, "degree", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                   </div>
                   <input
@@ -140,7 +140,7 @@ export function EducationExperience({
                     onChange={(e) =>
                       updateEducation(index, "field_of_study", e.target.value)
                     }
-                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                   />
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <input
@@ -150,7 +150,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateEducation(index, "start_date", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                     <input
                       type="date"
@@ -159,7 +159,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateEducation(index, "end_date", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                     <input
                       type="text"
@@ -168,7 +168,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateEducation(index, "grade", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -222,7 +222,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateExperience(index, "company", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                     <input
                       type="text"
@@ -231,7 +231,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateExperience(index, "title", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                   </div>
                   <input
@@ -241,7 +241,7 @@ export function EducationExperience({
                     onChange={(e) =>
                       updateExperience(index, "location", e.target.value)
                     }
-                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                   />
                   <div className="flex items-center gap-3">
                     <input
@@ -250,7 +250,7 @@ export function EducationExperience({
                       onChange={(e) =>
                         updateExperience(index, "start_date", e.target.value)
                       }
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     />
                     <span className="text-sm text-gray-400">to</span>
                     <input
@@ -260,7 +260,7 @@ export function EducationExperience({
                         updateExperience(index, "end_date", e.target.value)
                       }
                       disabled={item.is_current}
-                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                      className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
                     />
                   </div>
                   <label className="flex items-center gap-2 text-sm">
@@ -281,7 +281,7 @@ export function EducationExperience({
                     onChange={(e) =>
                       updateExperience(index, "description", e.target.value)
                     }
-                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
                 <button

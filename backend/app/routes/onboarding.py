@@ -30,10 +30,10 @@ async def _get_profile(
     )
     profile = result.scalar_one_or_none()
     if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Candidate profile not found. Call /api/auth/sync-profile first.",
-        )
+        profile = CandidateProfile(user_id=user_id, first_name="", last_name="")
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
     return profile
 
 

@@ -9,6 +9,9 @@ services:
       - ./backend:/app
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://jobedin:jobedin_dev@postgres:5432/jobedin
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,6 +34,9 @@ services:
       - ./backend:/app
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://jobedin:jobedin_dev@postgres:5432/jobedin
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +55,9 @@ services:
       - ./backend:/app
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://jobedin:jobedin_dev@postgres:5432/jobedin
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +78,9 @@ services:
       - ./resumes:/app/resumes
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://jobedin:jobedin_dev@postgres:5432/jobedin
     depends_on:
       postgres:
         condition: service_healthy
