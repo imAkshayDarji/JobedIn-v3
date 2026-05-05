@@ -12,13 +12,6 @@ import type {
   TargetRole,
 } from "@/types/profile";
 import {
-  createCertification,
-  createEducation,
-  createExperience,
-  createLanguage,
-  createProject,
-  createSkill,
-  createTargetRole,
   deleteCertification,
   deleteEducation,
   deleteExperience,
@@ -27,13 +20,6 @@ import {
   deleteSkill,
   deleteTargetRole,
   getProfileFull,
-  updateCertification,
-  updateEducation,
-  updateExperience,
-  updateLanguage,
-  updateProject,
-  updateSkill,
-  updateTargetRole,
 } from "@/lib/api/profile";
 import {
   deleteLinkedInCredentials,
@@ -41,9 +27,20 @@ import {
   saveLinkedInCredentials,
 } from "@/lib/api/settings";
 import { uploadResume } from "@/lib/api/onboarding";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { ProfileChildList } from "@/components/features/ProfileChildList";
+import { ProfileEntityForm } from "@/components/features/ProfileEntityForm";
 import { ProfilePersonalInfo } from "@/components/features/ProfilePersonalInfo";
 import { ProfileSection } from "@/components/features/ProfileSection";
+
+type EntityType =
+  | "target-role"
+  | "skill"
+  | "education"
+  | "experience"
+  | "project"
+  | "certification"
+  | "language";
 
 type EditingItem =
   | { entity: "education"; item: Education }
@@ -54,24 +51,63 @@ type EditingItem =
   | { entity: "certification"; item: Certification }
   | { entity: "language"; item: Language };
 
-type AddingEntity =
-  | "education"
-  | "experience"
-  | "skill"
-  | "project"
-  | "target-role"
-  | "certification"
-  | "language"
-  | null;
+const ENTITY_SECTIONS: {
+  title: string;
+  entity: EntityType;
+  entityName: string;
+  getItems: (p: ProfileDetail) => { id: string }[];
+}[] = [
+  {
+    title: "Target Roles",
+    entity: "target-role",
+    entityName: "target role",
+    getItems: (p) => p.target_roles,
+  },
+  {
+    title: "Skills",
+    entity: "skill",
+    entityName: "skill",
+    getItems: (p) => p.skills,
+  },
+  {
+    title: "Education",
+    entity: "education",
+    entityName: "education",
+    getItems: (p) => p.education,
+  },
+  {
+    title: "Experience",
+    entity: "experience",
+    entityName: "experience",
+    getItems: (p) => p.experience,
+  },
+  {
+    title: "Projects",
+    entity: "project",
+    entityName: "project",
+    getItems: (p) => p.projects,
+  },
+  {
+    title: "Certifications",
+    entity: "certification",
+    entityName: "certification",
+    getItems: (p) => p.certifications,
+  },
+  {
+    title: "Languages",
+    entity: "language",
+    entityName: "language",
+    getItems: (p) => p.languages,
+  },
+];
 
 export default function ProfilePage() {
   const [profileData, setProfileData] = useState<ProfileDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<EditingItem | null>(null);
-  const [addingEntity, setAddingEntity] = useState<AddingEntity>(null);
+  const [addingEntity, setAddingEntity] = useState<EntityType | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const [linkedinStatus, setLinkedinStatus] = useState<{
     has_credentials: boolean;
@@ -110,50 +146,6 @@ export default function ProfilePage() {
     fetchProfile();
     fetchLinkedInStatus();
   }, [fetchProfile, fetchLinkedInStatus]);
-
-  async function handleDeleteConfirm(itemId: string) {
-    setDeleteConfirm(itemId);
-  }
-
-  async function handleDeleteExecute() {
-    if (!deleteConfirm || !editingItem) return;
-    setActionError(null);
-    try {
-      const { entity, item } = editingItem;
-      const id = item.id;
-
-      switch (entity) {
-        case "education":
-          await deleteEducation(id);
-          break;
-        case "experience":
-          await deleteExperience(id);
-          break;
-        case "skill":
-          await deleteSkill(id);
-          break;
-        case "project":
-          await deleteProject(id);
-          break;
-        case "target-role":
-          await deleteTargetRole(id);
-          break;
-        case "certification":
-          await deleteCertification(id);
-          break;
-        case "language":
-          await deleteLanguage(id);
-          break;
-      }
-
-      setEditingItem(null);
-      setDeleteConfirm(null);
-      await fetchProfile();
-    } catch (err: unknown) {
-      const apiErr = err as { detail?: string };
-      setActionError(apiErr.detail ?? "Failed to delete");
-    }
-  }
 
   async function handleInlineDelete(
     entity: string,
@@ -228,35 +220,140 @@ export default function ProfilePage() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-4xl px-6 py-8">
-        <div className="mb-8 h-8 w-48 animate-pulse rounded bg-gray-200" />
-        <div className="space-y-6">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-40 animate-pulse rounded-lg bg-gray-100"
-            />
-          ))}
-        </div>
-      </div>
-    );
+  function handleFormSave() {
+    setEditingItem(null);
+    setAddingEntity(null);
+    fetchProfile();
   }
 
-  if (error && !profileData) {
-    return (
-      <div className="mx-auto max-w-4xl px-6 py-8">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-          <p className="text-red-700">{error}</p>
-        </div>
-      </div>
-    );
+  function handleFormCancel() {
+    setEditingItem(null);
+    setAddingEntity(null);
   }
 
-  if (!profileData) return null;
+  function getActiveFormEntity(): EntityType | null {
+    if (editingItem) return editingItem.entity;
+    if (addingEntity) return addingEntity;
+    return null;
+  }
 
-  return (
+  function renderItemImage(entity: EntityType, item: { id: string }): React.ReactNode {
+    const p = profileData!;
+    switch (entity) {
+      case "target-role": {
+        const tr = item as TargetRole;
+        return (
+          <div>
+            <p className="text-sm font-medium text-gray-900">{tr.title}</p>
+            {tr.keywords && (
+              <p className="text-xs text-gray-500">{tr.keywords}</p>
+            )}
+          </div>
+        );
+      }
+      case "skill": {
+        const sk = item as Skill;
+        return (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+              {sk.name}
+            </span>
+            {sk.category && (
+              <span className="text-xs text-gray-400">{sk.category}</span>
+            )}
+          </div>
+        );
+      }
+      case "education": {
+        const ed = item as Education;
+        return (
+          <div>
+            <p className="text-sm font-medium text-gray-900">{ed.degree}</p>
+            <p className="text-xs text-gray-500">{ed.institution}</p>
+            {ed.field_of_study && (
+              <p className="text-xs text-gray-400">{ed.field_of_study}</p>
+            )}
+          </div>
+        );
+      }
+      case "experience": {
+        const ex = item as Experience;
+        return (
+          <div>
+            <p className="text-sm font-medium text-gray-900">{ex.title}</p>
+            <p className="text-xs text-gray-500">{ex.company}</p>
+            {ex.location && (
+              <p className="text-xs text-gray-400">{ex.location}</p>
+            )}
+          </div>
+        );
+      }
+      case "project": {
+        const pr = item as Project;
+        return (
+          <div>
+            <p className="text-sm font-medium text-gray-900">{pr.name}</p>
+            {pr.description && (
+              <p className="text-xs text-gray-500 line-clamp-2">
+                {pr.description}
+              </p>
+            )}
+            {pr.technologies && (
+              <p className="text-xs text-gray-400">{pr.technologies}</p>
+            )}
+          </div>
+        );
+      }
+      case "certification": {
+        const cert = item as Certification;
+        return (
+          <div>
+            <p className="text-sm font-medium text-gray-900">{cert.name}</p>
+            {cert.issuer && (
+              <p className="text-xs text-gray-500">{cert.issuer}</p>
+            )}
+          </div>
+        );
+      }
+      case "language": {
+        const lang = item as Language;
+        return (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-900">
+              {lang.name}
+            </span>
+            {lang.proficiency && (
+              <span className="text-xs text-gray-400">
+                ({lang.proficiency})
+              </span>
+            )}
+          </div>
+        );
+      }
+    }
+  }
+
+  const activeFormEntity = getActiveFormEntity();
+
+  const pageContent = isLoading ? (
+    <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mb-8 h-8 w-48 animate-pulse rounded bg-gray-200" />
+      <div className="space-y-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-40 animate-pulse rounded-lg bg-gray-100"
+          />
+        ))}
+      </div>
+    </div>
+  ) : error && !profileData ? (
+    <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-red-700">{error}</p>
+      </div>
+    </div>
+  ) : !profileData ? null : (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-8 text-2xl font-bold text-gray-900">Profile</h1>
 
@@ -279,165 +376,65 @@ export default function ProfilePage() {
           onUpdate={fetchProfile}
         />
 
-        <ProfileSection title="Target Roles">
-          <ProfileChildList
-            items={profileData.target_roles}
-            entityName="target role"
-            renderItem={(item) => (
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {item.title}
-                </p>
-                {item.keywords && (
-                  <p className="text-xs text-gray-500">{item.keywords}</p>
-                )}
-              </div>
-            )}
-            onEdit={(item) =>
-              setEditingItem({ entity: "target-role", item })
-            }
-            onDelete={(item) => handleInlineDelete("target-role", item)}
-          />
-        </ProfileSection>
+        {ENTITY_SECTIONS.map((section) => {
+          const isFormActive = activeFormEntity === section.entity;
+          const editingItemForSection =
+            editingItem?.entity === section.entity ? editingItem.item : null;
 
-        <ProfileSection title="Skills">
-          <ProfileChildList
-            items={profileData.skills}
-            entityName="skill"
-            renderItem={(item) => (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                  {item.name}
-                </span>
-                {item.category && (
-                  <span className="text-xs text-gray-400">
-                    {item.category}
-                  </span>
-                )}
-              </div>
-            )}
-            onEdit={(item) => setEditingItem({ entity: "skill", item })}
-            onDelete={(item) => handleInlineDelete("skill", item)}
-          />
-        </ProfileSection>
-
-        <ProfileSection title="Education">
-          <ProfileChildList
-            items={profileData.education}
-            entityName="education"
-            renderItem={(item) => (
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {item.degree}
-                </p>
-                <p className="text-xs text-gray-500">{item.institution}</p>
-                {item.field_of_study && (
-                  <p className="text-xs text-gray-400">
-                    {item.field_of_study}
-                  </p>
-                )}
-              </div>
-            )}
-            onEdit={(item) =>
-              setEditingItem({ entity: "education", item })
-            }
-            onDelete={(item) => handleInlineDelete("education", item)}
-          />
-        </ProfileSection>
-
-        <ProfileSection title="Experience">
-          <ProfileChildList
-            items={profileData.experience}
-            entityName="experience"
-            renderItem={(item) => (
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {item.title}
-                </p>
-                <p className="text-xs text-gray-500">{item.company}</p>
-                {item.location && (
-                  <p className="text-xs text-gray-400">{item.location}</p>
-                )}
-              </div>
-            )}
-            onEdit={(item) =>
-              setEditingItem({ entity: "experience", item })
-            }
-            onDelete={(item) => handleInlineDelete("experience", item)}
-          />
-        </ProfileSection>
-
-        <ProfileSection title="Projects">
-          <ProfileChildList
-            items={profileData.projects}
-            entityName="project"
-            renderItem={(item) => (
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {item.name}
-                </p>
-                {item.description && (
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {item.description}
-                  </p>
-                )}
-                {item.technologies && (
-                  <p className="text-xs text-gray-400">
-                    {item.technologies}
-                  </p>
-                )}
-              </div>
-            )}
-            onEdit={(item) =>
-              setEditingItem({ entity: "project", item })
-            }
-            onDelete={(item) => handleInlineDelete("project", item)}
-          />
-        </ProfileSection>
-
-        <ProfileSection title="Certifications">
-          <ProfileChildList
-            items={profileData.certifications}
-            entityName="certification"
-            renderItem={(item) => (
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {item.name}
-                </p>
-                {item.issuer && (
-                  <p className="text-xs text-gray-500">{item.issuer}</p>
-                )}
-              </div>
-            )}
-            onEdit={(item) =>
-              setEditingItem({ entity: "certification", item })
-            }
-            onDelete={(item) => handleInlineDelete("certification", item)}
-          />
-        </ProfileSection>
-
-        <ProfileSection title="Languages">
-          <ProfileChildList
-            items={profileData.languages}
-            entityName="language"
-            renderItem={(item) => (
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-900">
-                  {item.name}
-                </span>
-                {item.proficiency && (
-                  <span className="text-xs text-gray-400">
-                    ({item.proficiency})
-                  </span>
-                )}
-              </div>
-            )}
-            onEdit={(item) =>
-              setEditingItem({ entity: "language", item })
-            }
-            onDelete={(item) => handleInlineDelete("language", item)}
-          />
-        </ProfileSection>
+          return (
+            <ProfileSection
+              key={section.entity}
+              title={section.title}
+              onAdd={() => {
+                setEditingItem(null);
+                setAddingEntity(section.entity);
+              }}
+            >
+              {isFormActive && (
+                <div className="mb-4">
+                  <ProfileEntityForm
+                    entityType={section.entity}
+                    initialData={editingItemForSection ?? undefined}
+                    onSave={handleFormSave}
+                    onCancel={handleFormCancel}
+                  />
+                </div>
+              )}
+              <ProfileChildList
+                items={section.getItems(profileData)}
+                entityName={section.entityName}
+                renderItem={(item) => renderItemImage(section.entity, item)}
+                onEdit={(item) => {
+                  setAddingEntity(null);
+                  switch (section.entity) {
+                    case "target-role":
+                      setEditingItem({ entity: "target-role", item: item as TargetRole });
+                      break;
+                    case "skill":
+                      setEditingItem({ entity: "skill", item: item as Skill });
+                      break;
+                    case "education":
+                      setEditingItem({ entity: "education", item: item as Education });
+                      break;
+                    case "experience":
+                      setEditingItem({ entity: "experience", item: item as Experience });
+                      break;
+                    case "project":
+                      setEditingItem({ entity: "project", item: item as Project });
+                      break;
+                    case "certification":
+                      setEditingItem({ entity: "certification", item: item as Certification });
+                      break;
+                    case "language":
+                      setEditingItem({ entity: "language", item: item as Language });
+                      break;
+                  }
+                }}
+                onDelete={(item) => handleInlineDelete(section.entity, item)}
+              />
+            </ProfileSection>
+          );
+        })}
 
         <ProfileSection title="LinkedIn Credentials">
           {linkedinStatus?.has_credentials ? (
@@ -487,6 +484,8 @@ export default function ProfilePage() {
       </div>
     </div>
   );
+
+  return <AppLayout>{pageContent}</AppLayout>;
 }
 
 function LinkedInForm({ onSave }: { onSave: (email: string, password: string) => Promise<void> }) {
