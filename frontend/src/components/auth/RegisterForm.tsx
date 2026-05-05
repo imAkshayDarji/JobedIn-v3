@@ -10,13 +10,50 @@ interface RegisterFormProps {
   onSuccess?: () => void;
 }
 
+const ERROR_MESSAGES: Record<string, string> = {
+  email_rate_limit_exceeded:
+    "Too many attempts. Please wait a few minutes before trying again.",
+  user_already_exists:
+    "An account with this email already exists. Try signing in instead.",
+  "already registered":
+    "An account with this email already exists. Try signing in instead.",
+  weak_password:
+    "Password is too weak. Use at least 6 characters with a mix of letters and numbers.",
+};
+
+function getFriendlyError(message: string): string {
+  for (const [code, friendly] of Object.entries(ERROR_MESSAGES)) {
+    if (message.includes(code)) return friendly;
+  }
+  return message;
+}
+
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmationSent, setConfirmationSent] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
   const router = useRouter();
+
+  async function handleResend() {
+    setResending(true);
+    setResent(false);
+    const supabase = createClient();
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
+    setResending(false);
+    if (resendError) {
+      setError(getFriendlyError(resendError.message));
+      return;
+    }
+    setResent(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,14 +73,17 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
 
     const supabase = createClient();
 
-    const { error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     });
 
     if (authError) {
       setLoading(false);
-      setError(authError.message);
+      setError(getFriendlyError(authError.message));
       return;
     }
 
@@ -55,12 +95,70 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
 
     setLoading(false);
 
-    if (onSuccess) {
-      onSuccess();
+    if (data.session) {
+      if (onSuccess) {
+        onSuccess();
+        return;
+      }
+      router.push("/onboarding");
       return;
     }
 
-    router.push("/onboarding");
+    setConfirmationSent(true);
+  }
+
+  if (confirmationSent) {
+    return (
+      <div className="space-y-4 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+          <svg
+            className="h-6 w-6 text-green-600"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+            />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900">
+          Check your email
+        </h3>
+        <p className="text-sm text-gray-600">
+          We sent a confirmation link to{" "}
+          <span className="font-medium text-gray-900">{email}</span>. Click the
+          link to verify your account and get started.
+        </p>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resending}
+            className="text-sm font-medium text-blue-600 hover:text-blue-500 disabled:opacity-50"
+          >
+            {resending ? "Sending..." : "Resend confirmation email"}
+          </button>
+          {resent && (
+            <p className="text-sm text-green-600">
+              Confirmation email resent successfully.
+            </p>
+          )}
+        </div>
+        <p className="text-sm text-gray-500">
+          Already confirmed?{" "}
+          <Link
+            href="/auth/login"
+            className="font-medium text-blue-600 hover:text-blue-500"
+          >
+            Sign in
+          </Link>
+        </p>
+      </div>
+    );
   }
 
   return (

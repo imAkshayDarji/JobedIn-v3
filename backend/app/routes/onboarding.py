@@ -1,5 +1,7 @@
 import io
+import logging
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy import delete, select
@@ -17,9 +19,25 @@ from app.schemas.onboarding import (
     OnboardingSaveRequest,
     OnboardingSaveResponse,
     OnboardingStatusResponse,
+    ParsedResume,
 )
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
+
+logger = logging.getLogger(__name__)
+
+
+def _ym_to_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    parts = value.split("-")
+    return date(int(parts[0]), int(parts[1]), 1)
+
+
+def _date_to_ym(value: date | None) -> str | None:
+    if not value:
+        return None
+    return value.strftime("%Y-%m")
 
 
 async def _get_profile(
@@ -89,13 +107,63 @@ async def upload_resume(
     return {
         "extracted_text": extracted_text,
         "page_count": len(reader.pages),
-        "pre_fill": {
-            "personal_info": None,
-            "target_roles": [],
-            "skills": [],
-            "education": [],
-            "experience": [],
-        },
+        "pre_fill": await _parse_resume_with_ai(extracted_text),
+    }
+
+
+async def _parse_resume_with_ai(resume_text: str) -> dict:
+    if not resume_text.strip():
+        return _empty_pre_fill()
+
+    try:
+        from app.services.ai_client import AIClient
+        from app.services.ai_prompts import parse_resume_prompt
+
+        client = AIClient()
+        result = await client.call(
+            task="parse_resume",
+            messages=parse_resume_prompt(resume_text),
+            response_model=ParsedResume,
+            context={"pipeline_step": "parse_resume"},
+        )
+        parsed: ParsedResume = result.content
+
+        personal_info = None
+        pi = parsed.personal_info
+        if pi and (pi.first_name or pi.last_name):
+            personal_info = {
+                "first_name": pi.first_name or "",
+                "last_name": pi.last_name or "",
+                "headline": pi.headline,
+                "summary": pi.summary,
+                "location": pi.location,
+                "phone": pi.phone,
+                "experience_level": pi.experience_level,
+                "linkedin_url": pi.linkedin_url,
+                "github_url": pi.github_url,
+                "portfolio_url": pi.portfolio_url,
+                "website_url": pi.website_url,
+            }
+
+        return {
+            "personal_info": personal_info,
+            "target_roles": [r.model_dump() for r in parsed.target_roles],
+            "skills": [s.model_dump() for s in parsed.skills],
+            "education": [e.model_dump() for e in parsed.education],
+            "experience": [x.model_dump() for x in parsed.experience],
+        }
+    except Exception:
+        logger.warning("AI resume parsing failed, returning empty pre_fill", exc_info=True)
+        return _empty_pre_fill()
+
+
+def _empty_pre_fill() -> dict:
+    return {
+        "personal_info": None,
+        "target_roles": [],
+        "skills": [],
+        "education": [],
+        "experience": [],
     }
 
 
@@ -158,8 +226,8 @@ async def save_onboarding(
                 institution=edu_data.institution,
                 degree=edu_data.degree,
                 field_of_study=edu_data.field_of_study,
-                start_date=edu_data.start_date,
-                end_date=edu_data.end_date,
+                start_date=_ym_to_date(edu_data.start_date),
+                end_date=_ym_to_date(edu_data.end_date),
                 grade=edu_data.grade,
                 description=edu_data.description,
             )
@@ -174,8 +242,8 @@ async def save_onboarding(
                 company=exp_data.company,
                 title=exp_data.title,
                 location=exp_data.location,
-                start_date=exp_data.start_date,
-                end_date=exp_data.end_date,
+                start_date=_ym_to_date(exp_data.start_date),
+                end_date=_ym_to_date(exp_data.end_date),
                 description=exp_data.description,
                 is_current=exp_data.is_current,
             )
@@ -292,8 +360,8 @@ async def get_onboarding_status(
                 institution=e.institution,
                 degree=e.degree,
                 field_of_study=e.field_of_study,
-                start_date=e.start_date,
-                end_date=e.end_date,
+                start_date=_date_to_ym(e.start_date),
+                end_date=_date_to_ym(e.end_date),
                 grade=e.grade,
                 description=e.description,
             )
@@ -304,8 +372,8 @@ async def get_onboarding_status(
                 company=ex.company,
                 title=ex.title,
                 location=ex.location,
-                start_date=ex.start_date,
-                end_date=ex.end_date,
+                start_date=_date_to_ym(ex.start_date),
+                end_date=_date_to_ym(ex.end_date),
                 description=ex.description,
                 is_current=ex.is_current,
             )

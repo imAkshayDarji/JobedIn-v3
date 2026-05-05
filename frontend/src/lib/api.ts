@@ -16,6 +16,11 @@ interface RequestOptions {
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {
+  // Auth bypass — send a dev header so the backend knows we're in bypass mode
+  if (process.env.NEXT_PUBLIC_BYPASS_AUTH === "true") {
+    return { "X-Dev-Bypass": "true" };
+  }
+
   const supabase = createClient();
   const {
     data: { session },
@@ -47,7 +52,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
     try {
       const body = await response.json();
-      error.detail = body.detail ?? body.error?.message ?? JSON.stringify(body);
+      const rawDetail = body.detail ?? body.error?.message ?? JSON.stringify(body);
+      error.detail = typeof rawDetail === "string"
+        ? rawDetail
+        : JSON.stringify(rawDetail);
       error.code = body.error?.code;
     } catch {
       error.detail = await response.text();

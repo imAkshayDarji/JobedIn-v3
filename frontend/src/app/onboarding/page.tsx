@@ -135,8 +135,25 @@ export default function OnboardingPage() {
       await saveOnboarding(formData);
       router.push("/dashboard");
     } catch (err: unknown) {
-      const apiErr = err as { detail?: string };
-      setError(apiErr.detail ?? "Failed to save onboarding data");
+      let message = "Failed to save onboarding data";
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (typeof err === "object" && err !== null) {
+        const apiErr = err as { detail?: string | unknown[] };
+        if (Array.isArray(apiErr.detail)) {
+          message = apiErr.detail
+            .map((e: unknown) => {
+              if (typeof e === "object" && e !== null) {
+                return (e as { msg?: string }).msg ?? String(e);
+              }
+              return String(e);
+            })
+            .join("; ");
+        } else if (typeof apiErr.detail === "string") {
+          message = apiErr.detail;
+        }
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }

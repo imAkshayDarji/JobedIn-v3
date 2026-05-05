@@ -10,6 +10,8 @@ from arq.connections import RedisSettings
 from sqlalchemy import select
 
 from app.config import settings
+from app.services.job_discovery import IngestResult
+from app.services.redis_pool import QUEUE_JOBS
 
 
 def _redis_settings_from_url(url: str) -> RedisSettings:
@@ -21,7 +23,7 @@ def _redis_settings_from_url(url: str) -> RedisSettings:
     host = host_port[0] if host_port[0] else "localhost"
     port = int(host_port[1]) if len(host_port) > 1 else 6379
     return RedisSettings(host=host, port=port, database=db)
-from app.services.job_discovery import IngestResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,11 @@ async def linkedin_discovery_job(
             if result.new_count > 0:
                 try:
                     redis = await ctx["redis"]
-                    await redis.enqueue_job("match_jobs_job", user_id)
+                    await redis.enqueue_job(
+                        "match_jobs_job",
+                        user_id,
+                        _queue_name=QUEUE_JOBS,
+                    )
                 except Exception:
                     logger.warning(f"Failed to enqueue match job for user {user_id}")
 
@@ -294,6 +300,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class JobWorkerSettings:
+    queue_name = "arq:queue:jobs"
     functions = [linkedin_discovery_job, api_discovery_job, match_jobs_job, ats_detect_job]
     cron_jobs = [
         cron(

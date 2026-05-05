@@ -1,15 +1,12 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
 
 interface OAuthButtonsProps {
   mode: "login" | "register";
 }
 
 export function OAuthButtons({ mode }: OAuthButtonsProps) {
-  const router = useRouter();
-
   async function handleGoogleSignIn() {
     const supabase = createClient();
 
@@ -24,8 +21,6 @@ export function OAuthButtons({ mode }: OAuthButtonsProps) {
       console.error("OAuth error:", error.message);
       return;
     }
-
-    router.push("/onboarding");
   }
 
   const label = mode === "login" ? "Sign in with Google" : "Sign up with Google";
