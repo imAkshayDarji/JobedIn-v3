@@ -179,11 +179,15 @@ export default function JobsPage() {
 
   async function handleDiscover() {
     try {
+      setError(false);
+      setErrorMessage("");
       const response = await discoverJobs({ sources: ["jsearch", "adzuna", "remotive", "reed"] });
       setDiscoverStatus("pending");
       pollDiscoverStatus(response.job_id);
     } catch {
       setDiscoverStatus(null);
+      setError(true);
+      setErrorMessage("Failed to start job discovery. Please try again.");
     }
   }
 

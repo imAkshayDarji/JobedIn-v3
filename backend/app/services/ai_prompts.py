@@ -311,3 +311,69 @@ def session_summary_prompt(
             ),
         },
     ]
+
+
+def parse_resume_prompt(resume_text: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
+        {
+            "role": "user",
+            "content": (
+                "Parse this resume text into structured candidate data for a job application platform.\n\n"
+                f"RESUME TEXT:\n{wrap_user_data(resume_text)}\n\n"
+                "Respond with a JSON object matching this schema:\n"
+                "{\n"
+                '  "personal_info": {\n'
+                '    "first_name": "John",\n'
+                '    "last_name": "Doe",\n'
+                '    "headline": "Senior Software Engineer",\n'
+                '    "summary": "Brief professional summary",\n'
+                '    "location": "City, State",\n'
+                '    "phone": "+1-555-0123",\n'
+                '    "experience_level": "senior",\n'
+                '    "linkedin_url": "https://linkedin.com/in/...",\n'
+                '    "github_url": "https://github.com/...",\n'
+                '    "portfolio_url": null,\n'
+                '    "website_url": null\n'
+                "  },\n"
+                '  "target_roles": [\n'
+                '    {"title": "Software Engineer", "priority": 1, "keywords": "Python, React, AWS"}\n'
+                "  ],\n"
+                '  "skills": [\n'
+                '    {"name": "Python", "category": "Programming", "proficiency": "expert"}\n'
+                "  ],\n"
+                '  "education": [\n'
+                '    {\n'
+                '      "institution": "University Name",\n'
+                '      "degree": "Bachelor of Science",\n'
+                '      "field_of_study": "Computer Science",\n'
+                '      "start_date": "2015-09",\n'
+                '      "end_date": "2019-05",\n'
+                '      "grade": "3.8 GPA",\n'
+                '      "description": null\n'
+                "    }\n"
+                "  ],\n"
+                '  "experience": [\n'
+                "    {\n"
+                '      "company": "Acme Corp",\n'
+                '      "title": "Software Engineer",\n'
+                '      "location": "San Francisco, CA",\n'
+                '      "start_date": "2019-06",\n'
+                '      "end_date": "2023-12",\n'
+                '      "description": "Led development of...",\n'
+                '      "is_current": false\n'
+                "    }\n"
+                "  ]\n"
+                "}\n\n"
+                "Rules:\n"
+                "- Extract all information present in the resume. Set fields to null if not found.\n"
+                "- personal_info should include name, contact details, and URLs found in the resume.\n"
+                "- Infer 1-3 target_roles from the candidate's experience and skills.\n"
+                "- List all technical and soft skills found. Assign categories like Programming, Frameworks, Tools, Soft Skills.\n"
+                "- Extract all education entries with dates in YYYY-MM or YYYY format.\n"
+                "- Extract all work experience entries with dates in YYYY-MM or YYYY format.\n"
+                "- For is_current, set true if the end_date is 'Present' or the role is ongoing.\n"
+                "- Do NOT fabricate any information not present in the resume."
+            ),
+        },
+    ]

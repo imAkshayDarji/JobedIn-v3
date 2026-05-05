@@ -3,7 +3,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from arq import create_pool as arq_create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings as app_settings
+from app.services.redis_pool import QUEUE_JOBS, RedisSettings, redis_settings_from_url
 from app.database import get_async_session
 from app.models.application import Application
 from app.models.base import ApplicationStatus, ExperienceLevel, JobSource, RemotePolicy
@@ -51,11 +51,7 @@ def escape_ilike(value: str) -> str:
 
 
 def _get_redis_settings() -> RedisSettings:
-    url = app_settings.REDIS_URL
-    host = url.split("@")[-1].split(":")[0] if "@" in url else "localhost"
-    port = int(url.split(":")[-1].split("/")[0]) if ":" in url else 6379
-    database = int(url.rstrip("/").split("/")[-1]) if "/" in url else 0
-    return RedisSettings(host=host, port=port, database=database)
+    return redis_settings_from_url(app_settings.REDIS_URL)
 
 
 async def _enqueue_linkedin_discovery_job(
@@ -70,6 +66,7 @@ async def _enqueue_linkedin_discovery_job(
             user_id,
             keywords,
             location,
+            _queue_name=QUEUE_JOBS,
         )
         return job.job_id if job else ""
     finally:
@@ -88,6 +85,7 @@ async def _enqueue_api_discovery_job(
             keywords,
             location,
             sources,
+            _queue_name=QUEUE_JOBS,
         )
         return job.job_id if job else ""
     finally:
@@ -116,7 +114,7 @@ async def _resolve_profile(
 async def _enqueue_match_job(user_id: str) -> str:
     redis = await arq_create_pool(_get_redis_settings())
     try:
-        job = await redis.enqueue_job("match_jobs_job", user_id)
+        job = await redis.enqueue_job("match_jobs_job", user_id, _queue_name=QUEUE_JOBS)
         return job.job_id if job else ""
     finally:
         await redis.close()
@@ -687,6 +685,7 @@ async def save_job(
                 str(user.id),
                 job.apply_url,
                 _job_id=f"ats_detect_{application.id}",
+                _queue_name=QUEUE_JOBS,
             )
             await redis.close()
             logger.info(

@@ -371,6 +371,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
+    queue_name = "arq:queue:ai"
     functions = [generate_resume_job, generate_cover_letter_job, generate_interview_prep_job]
     cron_jobs = [
         cron(

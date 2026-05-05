@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 import uuid
@@ -295,7 +296,6 @@ async def _get_recent_activity(
 @router.get("", response_model=DashboardResponse)
 async def get_dashboard(
     user: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session),
 ) -> DashboardResponse:
     start = time.monotonic()
 
@@ -304,9 +304,25 @@ async def get_dashboard(
         extra={"user_id": str(user.id)},
     )
 
-    profile = await _get_profile(user.id, session)
-    stats = await _get_stats(user.id, session)
-    activity = await _get_recent_activity(user.id, session)
+    from app.database import async_session_factory
+
+    async def _get_profile_independent() -> ProfileSummary | None:
+        async with async_session_factory() as s:
+            return await _get_profile(user.id, s)
+
+    async def _get_stats_independent() -> DashboardStats:
+        async with async_session_factory() as s:
+            return await _get_stats(user.id, s)
+
+    async def _get_activity_independent() -> list[ActivityItem]:
+        async with async_session_factory() as s:
+            return await _get_recent_activity(user.id, s)
+
+    profile, stats, activity = await asyncio.gather(
+        _get_profile_independent(),
+        _get_stats_independent(),
+        _get_activity_independent(),
+    )
 
     elapsed = (time.monotonic() - start) * 1000
     logger.info(

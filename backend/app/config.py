@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     ATS_RESUME_FILE_FORMAT: str = "txt"
 
     CORS_ORIGINS: str = "http://localhost:3000"
+
+    BYPASS_AUTH: bool = False
+    BYPASS_AUTH_USER_ID: str = "00000000-0000-0000-0000-000000000001"
+    BYPASS_AUTH_USER_EMAIL: str = "dev@jobedin.local"
     MAX_UPLOAD_SIZE_MB: int = 10
 
     RATE_LIMIT_ENABLED: bool = True

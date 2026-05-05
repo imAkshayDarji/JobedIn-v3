@@ -1,7 +1,14 @@
 from datetime import date
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+YearMonth = Annotated[
+    str | None,
+    Field(default=None, pattern=r"^\d{4}-\d{2}$"),
+]
 
 
 class OnboardingTargetRole(BaseModel):
@@ -20,20 +27,34 @@ class OnboardingEducation(BaseModel):
     institution: str = Field(min_length=1, max_length=200)
     degree: str = Field(min_length=1, max_length=200)
     field_of_study: str | None = Field(default=None, max_length=200)
-    start_date: date | None = Field(default=None)
-    end_date: date | None = Field(default=None)
+    start_date: YearMonth
+    end_date: YearMonth
     grade: str | None = Field(default=None, max_length=50)
     description: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def coerce_empty_string(cls, v: object) -> str | None:
+        if v == "":
+            return None
+        return v
 
 
 class OnboardingExperience(BaseModel):
     company: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=200)
     location: str | None = Field(default=None, max_length=200)
-    start_date: date | None = Field(default=None)
-    end_date: date | None = Field(default=None)
+    start_date: YearMonth
+    end_date: YearMonth
     description: str | None = Field(default=None, max_length=2000)
     is_current: bool = Field(default=False)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def coerce_empty_string(cls, v: object) -> str | None:
+        if v == "":
+            return None
+        return v
 
 
 class OnboardingPersonalInfo(BaseModel):
@@ -48,6 +69,60 @@ class OnboardingPersonalInfo(BaseModel):
     github_url: str | None = Field(default=None, max_length=500)
     portfolio_url: str | None = Field(default=None, max_length=500)
     website_url: str | None = Field(default=None, max_length=500)
+
+
+class ParsedPersonalInfo(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    headline: str | None = None
+    summary: str | None = None
+    location: str | None = None
+    phone: str | None = None
+    experience_level: str | None = None
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+    website_url: str | None = None
+
+
+class ParsedTargetRole(BaseModel):
+    title: str
+    priority: int = 0
+    keywords: str | None = None
+
+
+class ParsedSkill(BaseModel):
+    name: str
+    category: str | None = None
+    proficiency: str | None = None
+
+
+class ParsedEducation(BaseModel):
+    institution: str | None = None
+    degree: str | None = None
+    field_of_study: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    grade: str | None = None
+    description: str | None = None
+
+
+class ParsedExperience(BaseModel):
+    company: str | None = None
+    title: str | None = None
+    location: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    description: str | None = None
+    is_current: bool = False
+
+
+class ParsedResume(BaseModel):
+    personal_info: ParsedPersonalInfo | None = None
+    target_roles: list[ParsedTargetRole] = []
+    skills: list[ParsedSkill] = []
+    education: list[ParsedEducation] = []
+    experience: list[ParsedExperience] = []
 
 
 class OnboardingSaveRequest(BaseModel):
