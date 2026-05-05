@@ -19,13 +19,7 @@ export async function saveOnboarding(
 export async function uploadResume(
   file: File,
 ): Promise<ResumeUploadResponse> {
-  const supabase = await import("@/lib/supabase/client").then(
-    (m) => m.createClient,
-  );
-  const client = supabase();
-  const {
-    data: { session },
-  } = await client.auth.getSession();
+  const { getAuthHeaders } = await import("@/lib/api");
 
   const formData = new FormData();
   formData.append("file", file);
@@ -33,12 +27,12 @@ export async function uploadResume(
   const baseUrl =
     process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+  const authHeaders = await getAuthHeaders();
+
   const response = await fetch(`${baseUrl}/api/onboarding/upload-resume`, {
     method: "POST",
     headers: {
-      ...(session?.access_token
-        ? { Authorization: `Bearer ${session.access_token}` }
-        : {}),
+      ...authHeaders,
     },
     body: formData,
   });
