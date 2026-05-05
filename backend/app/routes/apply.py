@@ -5,7 +5,6 @@ import os
 import uuid
 
 from arq import create_pool as arq_create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from slowapi.util import get_remote_address
@@ -15,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings
+from app.services.redis_pool import QUEUE_APPLY, QUEUE_JOBS, RedisSettings, redis_settings_from_url
 from app.database import get_async_session
 from app.middleware.rate_limit import limiter
 from app.models.application import Application
@@ -48,11 +48,7 @@ TERMINAL_STATUSES = frozenset({
 
 
 def _get_redis_settings() -> RedisSettings:
-    url = settings.REDIS_URL
-    host = url.split("@")[-1].split(":")[0] if "@" in url else "localhost"
-    port = int(url.split(":")[-1].split("/")[0]) if ":" in url else 6379
-    database = int(url.rstrip("/").split("/")[-1]) if "/" in url else 0
-    return RedisSettings(host=host, port=port, database=database)
+    return redis_settings_from_url(settings.REDIS_URL)
 
 
 async def _validate_application_ownership(
@@ -135,6 +131,7 @@ async def detect_ats(
             str(user.id),
             apply_url,
             _job_id=f"ats_detect_{application.id}",
+            _queue_name=QUEUE_JOBS,
         )
         await redis.close()
     except Exception as exc:
@@ -275,6 +272,7 @@ async def apply_single(
             str(application.id),
             str(user.id),
             _job_id=f"apply_single_{application.id}",
+            _queue_name=QUEUE_APPLY,
         )
         await redis.close()
     except Exception as exc:
@@ -354,6 +352,7 @@ async def apply_bulk(
             str(user.id),
             bulk_task_id,
             _job_id=bulk_task_id,
+            _queue_name=QUEUE_APPLY,
         )
         await redis.close()
     except Exception as exc:

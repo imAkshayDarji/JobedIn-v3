@@ -3,7 +3,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from arq import create_pool as arq_create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from slowapi.util import get_remote_address
 from sqlalchemy import desc, func, select
@@ -11,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import CurrentUser, get_current_user
 from app.config import settings as app_settings
+from app.services.redis_pool import QUEUE_AI, RedisSettings, redis_settings_from_url
 from app.database import get_async_session
 from app.middleware.rate_limit import limiter
 from app.models.candidate import CandidateProfile
@@ -39,11 +39,7 @@ DEDUP_WINDOW_MINUTES = 5
 
 
 def _get_redis_settings() -> RedisSettings:
-    url = app_settings.REDIS_URL
-    host = url.split("@")[-1].split(":")[0] if "@" in url else "localhost"
-    port = int(url.split(":")[-1].split("/")[0]) if ":" in url else 6379
-    database = int(url.rstrip("/").split("/")[-1]) if "/" in url else 0
-    return RedisSettings(host=host, port=port, database=database)
+    return redis_settings_from_url(app_settings.REDIS_URL)
 
 
 async def _enqueue_resume_job(resume_id: str, user_id: str, profile_id: str, job_description: str) -> None:
@@ -54,6 +50,7 @@ async def _enqueue_resume_job(resume_id: str, user_id: str, profile_id: str, job
         user_id,
         profile_id,
         job_description,
+        _queue_name=QUEUE_AI,
     )
     await redis.close()
 

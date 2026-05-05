@@ -78,6 +78,14 @@ def _payload_to_user(payload: dict) -> CurrentUser:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
 ) -> CurrentUser:
+    if settings.BYPASS_AUTH:
+        logger.warning("Auth bypass active — returning dev user %s", settings.BYPASS_AUTH_USER_EMAIL)
+        return CurrentUser(
+            id=uuid.UUID(settings.BYPASS_AUTH_USER_ID),
+            email=settings.BYPASS_AUTH_USER_EMAIL,
+            role="authenticated",
+        )
+
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,6 +99,13 @@ async def get_current_user(
 async def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
 ) -> CurrentUser | None:
+    if settings.BYPASS_AUTH:
+        return CurrentUser(
+            id=uuid.UUID(settings.BYPASS_AUTH_USER_ID),
+            email=settings.BYPASS_AUTH_USER_EMAIL,
+            role="authenticated",
+        )
+
     if credentials is None:
         return None
 

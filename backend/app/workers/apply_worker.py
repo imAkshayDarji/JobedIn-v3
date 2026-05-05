@@ -232,6 +232,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class ApplyWorkerSettings:
+    queue_name = "arq:queue:apply"
     functions = [apply_single_job, apply_bulk_job]
     cron_jobs = [
         cron(
