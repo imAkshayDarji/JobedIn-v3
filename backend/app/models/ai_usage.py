@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 
 from sqlalchemy import Index, text
@@ -13,7 +12,7 @@ class AITokenUsage(TimestampModel, table=True):
         Index("ix_ai_token_usage_user_created", "user_id", text("created_at DESC")),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     task: str
     model_used: str
     prompt_tokens: int = Field(default=0)

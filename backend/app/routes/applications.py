@@ -58,7 +58,7 @@ def _job_to_job_info(job: Job) -> ApplicationJobInfo:
 
 async def _get_application_with_ownership(
     application_id: uuid.UUID,
-    user_id: uuid.UUID,
+    user_id: str,
     session: AsyncSession,
 ) -> Application:
     result = await session.execute(
