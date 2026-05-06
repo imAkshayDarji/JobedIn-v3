@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 
@@ -16,30 +16,22 @@ interface UserInfo {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const [user, setUser] = useState<UserInfo | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
+  const { isLoaded } = useAuth();
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
-  useEffect(() => {
-    async function loadUser() {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        const meta = session.user.user_metadata ?? {};
-        setUser({
-          email: session.user.email ?? "",
-          first_name: meta.first_name,
-          last_name: meta.last_name,
-        });
+  const userInfo: UserInfo | null = user
+    ? {
+        email: user.primaryEmailAddress?.emailAddress ?? "",
+        first_name: user.firstName ?? undefined,
+        last_name: user.lastName ?? undefined,
       }
-    }
-    loadUser();
-  }, []);
+    : null;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -55,9 +47,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, []);
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/auth/login");
+    await signOut(() => router.push("/auth/login"));
   }
 
   const navLinks = [
@@ -75,11 +65,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   function getUserInitials(): string {
-    if (user?.first_name && user?.last_name) {
-      return (user.first_name[0] + user.last_name[0]).toUpperCase();
+    if (userInfo?.first_name && userInfo?.last_name) {
+      return (userInfo.first_name[0] + userInfo.last_name[0]).toUpperCase();
     }
-    if (user?.email) {
-      return user.email[0].toUpperCase();
+    if (userInfo?.email) {
+      return userInfo.email[0].toUpperCase();
     }
     return "?";
   }
@@ -115,7 +105,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-                title={user?.email}
+                title={userInfo?.email}
               >
                 {getUserInitials()}
               </button>

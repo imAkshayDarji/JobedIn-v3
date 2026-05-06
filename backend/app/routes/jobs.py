@@ -93,7 +93,7 @@ async def _enqueue_api_discovery_job(
 
 
 async def _resolve_profile(
-    user_id: uuid.UUID,
+    user_id: str,
     session: AsyncSession,
     *,
     load_target_roles: bool = False,

@@ -45,6 +45,9 @@ coverage/
 .coverage
 htmlcov/
 
+# Vendored Python libs
+backend/lib/
+
 # Misc
 *.bak
 *.tmp

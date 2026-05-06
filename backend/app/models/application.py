@@ -15,7 +15,7 @@ class Application(TimestampModel, table=True):
         UniqueConstraint("user_id", "job_id", name="uq_applications_user_job"),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     job_id: uuid.UUID = Field(foreign_key="jobs.id", ondelete="CASCADE")
     status: ApplicationStatus = Field(default=ApplicationStatus.saved)
     applied_at: datetime | None = Field(default=None)

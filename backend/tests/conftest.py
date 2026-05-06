@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
@@ -11,18 +11,17 @@ from app.config import settings
 from app.database import get_async_session
 from app.main import app
 
+TEST_USER_ID = "user_test_" + str(uuid.uuid4())[:8]
+TEST_EMAIL = "test@example.com"
 TEST_JWT_SECRET = "test-jwt-secret-for-testing-only-min-32-chars!!"
-TEST_SUPABASE_URL = "https://test.supabase.co"
 
 
 def mint_jwt(
     user_id: str | None = None,
-    email: str = "test@example.com",
+    email: str = TEST_EMAIL,
     expired: bool = False,
-    secret: str = TEST_JWT_SECRET,
-    issuer: str | None = None,
 ) -> str:
-    uid = user_id or str(uuid.uuid4())
+    uid = user_id or TEST_USER_ID
     now = datetime.now(timezone.utc)
     if expired:
         issued_at = now - timedelta(hours=2)
@@ -35,22 +34,31 @@ def mint_jwt(
         "sub": uid,
         "email": email,
         "role": "authenticated",
-        "iss": issuer or f"{TEST_SUPABASE_URL}/auth/v1",
+        "iss": "https://clerk.test",
         "iat": issued_at,
         "exp": expiry,
-        "aud": "authenticated",
     }
 
-    return jwt.encode(payload, secret, algorithm="HS256")
+    return jwt.encode(payload, TEST_JWT_SECRET, algorithm="HS256")
+
+
+def _mock_decode_token(token: str, _jwks: dict) -> dict:
+    return jwt.decode(
+        token,
+        TEST_JWT_SECRET,
+        algorithms=["HS256"],
+        options={"verify_aud": False},
+    )
 
 
 @pytest.fixture(autouse=True)
 def _set_test_settings():
     from app.middleware.rate_limit import limiter
 
-    with patch.object(settings, "SUPABASE_JWT_SECRET", TEST_JWT_SECRET), patch.object(
-        settings, "SUPABASE_URL", TEST_SUPABASE_URL
-    ), patch.object(settings, "RATE_LIMIT_ENABLED", False):
+    with patch.object(settings, "CLERK_JWKS_URL", "https://clerk.test/.well-known/jwks.json"), \
+         patch.object(settings, "RATE_LIMIT_ENABLED", False), \
+         patch("app.auth._fetch_jwks", new_callable=AsyncMock, return_value={"test-kid": {}}), \
+         patch("app.auth._decode_token", side_effect=_mock_decode_token):
         limiter.enabled = False
         yield
         limiter.enabled = settings.RATE_LIMIT_ENABLED

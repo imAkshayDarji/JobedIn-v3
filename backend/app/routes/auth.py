@@ -1,5 +1,3 @@
-import uuid
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +14,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @limiter.limit("10/minute")
 async def get_me(request: Request, user: CurrentUser = Depends(get_current_user)) -> dict:
     return {
-        "id": str(user.id),
+        "id": user.id,
         "email": user.email,
         "role": user.role,
     }
@@ -28,7 +26,7 @@ async def verify_token(request: Request, user: CurrentUser = Depends(get_current
     return {
         "valid": True,
         "user": {
-            "id": str(user.id),
+            "id": user.id,
             "email": user.email,
             "role": user.role,
         },

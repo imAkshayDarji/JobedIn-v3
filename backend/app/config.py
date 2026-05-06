@@ -14,10 +14,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ENVIRONMENT: str = "development"
     SENTRY_DSN_BACKEND: str = ""
-    SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
-    SUPABASE_JWT_SECRET: str = ""
+    CLERK_SECRET_KEY: str = ""
+    CLERK_PUBLISHABLE_KEY: str = ""
+    CLERK_JWKS_URL: str = ""
 
     AI_PIPELINE_TIMEOUT_SECONDS: int = 120
     AI_STALE_JOB_SWEEP_INTERVAL_SECONDS: int = 300

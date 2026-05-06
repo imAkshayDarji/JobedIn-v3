@@ -12,7 +12,7 @@ class CoverLetter(TimestampModel, table=True):
         Index("ix_cover_letters_user_created", "user_id", text("created_at DESC")),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     job_id: uuid.UUID | None = Field(default=None, foreign_key="jobs.id", ondelete="SET NULL")
     job_description: str | None = Field(default=None)
     content: str | None = Field(default=None)
