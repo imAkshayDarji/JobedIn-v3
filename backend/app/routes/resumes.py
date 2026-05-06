@@ -56,7 +56,7 @@ async def _enqueue_resume_job(resume_id: str, user_id: str, profile_id: str, job
 
 
 async def _resolve_profile(
-    user_id: uuid.UUID, session: AsyncSession
+    user_id: str, session: AsyncSession
 ) -> CandidateProfile:
     result = await session.execute(
         select(CandidateProfile).where(CandidateProfile.user_id == user_id)

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import settings
 from app.database import get_async_session
 from app.main import app
-from tests.conftest import TEST_JWT_SECRET, TEST_SUPABASE_URL, mint_jwt
+from tests.conftest import mint_jwt
 
 
 def _make_pdf() -> bytes:

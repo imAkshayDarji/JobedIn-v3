@@ -12,7 +12,7 @@ class Resume(TimestampModel, table=True):
         Index("ix_resumes_user_created", "user_id", text("created_at DESC")),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     job_id: uuid.UUID | None = Field(default=None, foreign_key="jobs.id", ondelete="SET NULL")
     content_json: dict | None = Field(default=None, sa_column=Column(SA_JSON))
     ats_score: float | None = Field(default=None)

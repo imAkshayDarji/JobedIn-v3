@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,7 +11,7 @@ from app.main import app
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.models.resume import Resume
-from tests.conftest import TEST_JWT_SECRET, TEST_SUPABASE_URL, mint_jwt
+from tests.conftest import mint_jwt
 
 
 async def _get_test_session():

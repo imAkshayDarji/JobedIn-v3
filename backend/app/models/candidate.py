@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, JSON as SA_JSON
@@ -10,7 +9,7 @@ from app.models.base import ExperienceLevel, TimestampModel
 class CandidateProfile(TimestampModel, table=True):
     __tablename__ = "candidate_profiles"
 
-    user_id: uuid.UUID = Field(unique=True, index=True)
+    user_id: str = Field(unique=True, index=True)
     first_name: str
     last_name: str
     headline: str | None = Field(default=None)

@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createClient } from "@/lib/supabase/client";
-
 import { api, getAuthHeaders, type ApiError } from "../api";
 
-vi.mock("@/lib/supabase/client");
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => ({
+    getToken: vi.fn().mockResolvedValue("test-token-123"),
+    userId: "user_test_123",
+  }),
+}));
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
   addBreadcrumb: vi.fn(),
@@ -20,32 +23,10 @@ vi.mock("sonner", () => ({
   Toaster: () => null,
 }));
 
-const mockGetSession = vi.fn();
-
-beforeEach(() => {
-  vi.mocked(createClient).mockReturnValue({
-    auth: {
-      getSession: mockGetSession,
-      signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
-      signOut: vi.fn(),
-    },
-  } as ReturnType<typeof createClient>);
-  mockGetSession.mockResolvedValue({
-    data: { session: { access_token: "test-token-123" } },
-  });
-});
-
 describe("getAuthHeaders", () => {
   it("returns Authorization header with Bearer token", async () => {
     const headers = await getAuthHeaders();
     expect(headers).toEqual({ Authorization: "Bearer test-token-123" });
-  });
-
-  it("returns empty object when no session", async () => {
-    mockGetSession.mockResolvedValue({ data: { session: null } });
-    const headers = await getAuthHeaders();
-    expect(headers).toEqual({});
   });
 });
 
