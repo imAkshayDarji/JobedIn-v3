@@ -19,7 +19,7 @@ class JobMatch(TimestampModel, table=True):
         Index("ix_job_matches_user_score", "user_id", "match_score"),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     job_id: uuid.UUID = Field(foreign_key="jobs.id", ondelete="CASCADE")
     match_score: float
     skills_score: float

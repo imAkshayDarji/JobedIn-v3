@@ -58,7 +58,7 @@ async def _enqueue_cover_letter_job(
 
 
 async def _resolve_profile(
-    user_id: uuid.UUID, session: AsyncSession
+    user_id: str, session: AsyncSession
 ) -> CandidateProfile:
     result = await session.execute(
         select(CandidateProfile).where(CandidateProfile.user_id == user_id)

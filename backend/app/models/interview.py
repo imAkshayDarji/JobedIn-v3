@@ -13,7 +13,7 @@ class InterviewPrep(TimestampModel, table=True):
         Index("ix_interview_preps_user_created", "user_id", text("created_at DESC")),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     job_id: uuid.UUID | None = Field(default=None, foreign_key="jobs.id", ondelete="SET NULL")
     questions: list | None = Field(default=None, sa_column=Column(SA_JSON))
     status: str = Field(default="generating")
@@ -28,7 +28,7 @@ class InterviewSession(TimestampModel, table=True):
         Index("ix_interview_sessions_user_created", "user_id", text("created_at DESC")),
     )
 
-    user_id: uuid.UUID = Field(index=True)
+    user_id: str = Field(index=True)
     interview_prep_id: uuid.UUID = Field(
         foreign_key="interview_preps.id", ondelete="CASCADE"
     )

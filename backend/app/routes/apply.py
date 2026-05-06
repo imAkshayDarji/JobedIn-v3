@@ -52,7 +52,7 @@ def _get_redis_settings() -> RedisSettings:
 
 
 async def _validate_application_ownership(
-    session: AsyncSession, application_id: uuid.UUID, user_id: uuid.UUID,
+    session: AsyncSession, application_id: uuid.UUID, user_id: str,
 ) -> Application:
     result = await session.execute(
         select(Application).where(Application.id == application_id)

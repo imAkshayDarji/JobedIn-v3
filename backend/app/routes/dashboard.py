@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
 async def _get_profile(
-    user_id: uuid.UUID,
+    user_id: str,
     session: AsyncSession,
 ) -> ProfileSummary | None:
     result = await session.execute(
@@ -76,7 +76,7 @@ async def _status_counts(
 
 
 async def _get_stats(
-    user_id: uuid.UUID,
+    user_id: str,
     session: AsyncSession,
 ) -> DashboardStats:
     uid = user_id
@@ -187,7 +187,7 @@ async def _get_stats(
 
 
 async def _get_recent_activity(
-    user_id: uuid.UUID,
+    user_id: str,
     session: AsyncSession,
 ) -> list[ActivityItem]:
     uid = user_id

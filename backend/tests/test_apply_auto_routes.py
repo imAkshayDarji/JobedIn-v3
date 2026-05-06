@@ -1,6 +1,5 @@
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,14 +9,13 @@ from app.config import settings
 from app.models.application import Application
 from app.models.base import ApplicationStatus
 from app.schemas.apply import ApplySingleRequest, ApplyBulkRequest
+from tests.conftest import _mock_decode_token
 
 
 def _make_mock_request():
     scope = {"type": "http", "method": "POST", "path": "/api/apply/single", "query_string": b"", "headers": []}
     return StarletteRequest(scope)
 
-TEST_JWT_SECRET = "test-jwt-secret-for-testing-only-min-32-chars!!"
-TEST_SUPABASE_URL = "https://test.supabase.co"
 TEST_USER_ID = str(uuid.uuid4())
 OTHER_USER_ID = str(uuid.uuid4())
 
@@ -30,31 +28,11 @@ def _disable_rate_limiting():
     limiter.enabled = True
 
 
-def _mint_jwt(
-    user_id: str = TEST_USER_ID,
-    email: str = "test@example.com",
-    secret: str = TEST_JWT_SECRET,
-) -> str:
-    import jwt as pyjwt
-
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "role": "authenticated",
-        "iss": f"{TEST_SUPABASE_URL}/auth/v1",
-        "iat": now,
-        "exp": now + timedelta(hours=1),
-        "aud": "authenticated",
-    }
-    return pyjwt.encode(payload, secret, algorithm="HS256")
-
-
 @pytest.fixture(autouse=True)
 def _set_test_settings():
-    with patch.object(settings, "SUPABASE_JWT_SECRET", TEST_JWT_SECRET), patch.object(
-        settings, "SUPABASE_URL", TEST_SUPABASE_URL
-    ):
+    with patch.object(settings, "CLERK_JWKS_URL", "https://clerk.test/.well-known/jwks.json"), \
+         patch("app.auth._fetch_jwks", new_callable=AsyncMock, return_value={"test-kid": {}}), \
+         patch("app.auth._decode_token", side_effect=_mock_decode_token):
         yield
 
 

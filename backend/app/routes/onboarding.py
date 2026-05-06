@@ -41,7 +41,7 @@ def _date_to_ym(value: date | None) -> str | None:
 
 
 async def _get_profile(
-    user_id: uuid.UUID, session: AsyncSession
+    user_id: str, session: AsyncSession
 ) -> CandidateProfile:
     result = await session.execute(
         select(CandidateProfile).where(CandidateProfile.user_id == user_id)

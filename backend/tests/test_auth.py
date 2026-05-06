@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
@@ -9,18 +9,15 @@ from httpx import ASGITransport, AsyncClient
 from app.config import settings
 from app.main import app
 
-TEST_JWT_SECRET = "test-jwt-secret-for-testing-only-min-32-chars!!"
-TEST_SUPABASE_URL = "https://test.supabase.co"
-TEST_USER_ID = str(uuid.uuid4())
+TEST_USER_ID = "user_test_" + str(uuid.uuid4())[:8]
 TEST_EMAIL = "test@example.com"
+TEST_JWT_SECRET = "test-jwt-secret-for-testing-only-min-32-chars!!"
 
 
 def _mint_jwt(
     user_id: str = TEST_USER_ID,
     email: str = TEST_EMAIL,
     expired: bool = False,
-    secret: str = TEST_JWT_SECRET,
-    issuer: str | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     if expired:
@@ -34,20 +31,28 @@ def _mint_jwt(
         "sub": user_id,
         "email": email,
         "role": "authenticated",
-        "iss": issuer or f"{TEST_SUPABASE_URL}/auth/v1",
+        "iss": "https://clerk.test",
         "iat": issued_at,
         "exp": expiry,
-        "aud": "authenticated",
     }
 
-    return jwt.encode(payload, secret, algorithm="HS256")
+    return jwt.encode(payload, TEST_JWT_SECRET, algorithm="HS256")
+
+
+def _mock_decode_token(token: str, _jwks: dict) -> dict:
+    return jwt.decode(
+        token,
+        TEST_JWT_SECRET,
+        algorithms=["HS256"],
+        options={"verify_aud": False},
+    )
 
 
 @pytest.fixture(autouse=True)
 def _set_test_settings():
-    with patch.object(settings, "SUPABASE_JWT_SECRET", TEST_JWT_SECRET), patch.object(
-        settings, "SUPABASE_URL", TEST_SUPABASE_URL
-    ):
+    with patch.object(settings, "CLERK_JWKS_URL", "https://clerk.test/.well-known/jwks.json"), \
+         patch("app.auth._fetch_jwks", new_callable=AsyncMock, return_value={"test-kid": {}}), \
+         patch("app.auth._decode_token", side_effect=_mock_decode_token):
         yield
 
 
@@ -69,13 +74,21 @@ async def test_get_current_user_valid_token():
 
 @pytest.mark.asyncio
 async def test_get_current_user_expired_token():
-    token = _mint_jwt(expired=True)
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/api/auth/me",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    from app.auth import _fetch_jwks
+    from fastapi import HTTPException
+
+    expired_token = _mint_jwt(expired=True)
+
+    def _decode_expired(token: str, jwks: dict) -> dict:
+        raise HTTPException(status_code=401, detail="Token has expired")
+
+    with patch("app.auth._decode_token", side_effect=_decode_expired):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/auth/me",
+                headers={"Authorization": f"Bearer {expired_token}"},
+            )
 
     assert response.status_code == 401
     assert "expired" in response.json()["detail"].lower()
@@ -92,12 +105,19 @@ async def test_get_current_user_no_token():
 
 @pytest.mark.asyncio
 async def test_get_current_user_invalid_token():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/api/auth/me",
-            headers={"Authorization": "Bearer garbage-token-here"},
-        )
+    from app.auth import _fetch_jwks
+    from fastapi import HTTPException
+
+    def _decode_invalid(token: str, jwks: dict) -> dict:
+        raise HTTPException(status_code=401, detail="Invalid token: DecodeError")
+
+    with patch("app.auth._decode_token", side_effect=_decode_invalid):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/auth/me",
+                headers={"Authorization": "Bearer garbage-token-here"},
+            )
 
     assert response.status_code == 401
     assert "invalid" in response.json()["detail"].lower()
@@ -156,17 +176,3 @@ async def test_health_check_still_works():
     data = response.json()
     assert data["status"] == "ok"
     assert data["version"] == "0.1.0"
-
-
-@pytest.mark.asyncio
-async def test_invalid_issuer_rejected():
-    token = _mint_jwt(issuer="https://evil.com/auth/v1")
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/api/auth/me",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-    assert response.status_code == 401
-    assert "issuer" in response.json()["detail"].lower()

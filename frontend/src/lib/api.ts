@@ -1,8 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { toast } from "sonner";
 
-import { createClient } from "@/lib/supabase/client";
-
 interface ApiError {
   status: number;
   message: string;
@@ -16,18 +14,19 @@ interface RequestOptions {
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {
-  // Auth bypass — send a dev header so the backend knows we're in bypass mode
   if (process.env.NEXT_PUBLIC_BYPASS_AUTH === "true") {
     return { "X-Dev-Bypass": "true" };
   }
 
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (session?.access_token) {
-    return { Authorization: `Bearer ${session.access_token}` };
+  try {
+    const { auth } = await import("@clerk/nextjs/server");
+    const { getToken } = await auth();
+    const token = await getToken();
+    if (token) {
+      return { Authorization: `Bearer ${token}` };
+    }
+  } catch {
+    // Not in a server context — try client-side
   }
 
   return {};

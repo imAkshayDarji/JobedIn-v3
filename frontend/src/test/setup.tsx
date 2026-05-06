@@ -49,16 +49,30 @@ vi.mock("sonner", () => ({
   Toaster: () => null,
 }));
 
-// Mock @supabase/ssr
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    auth: {
-      getSession: vi.fn().mockResolvedValue({
-        data: { session: { access_token: "test-token" } },
-      }),
-      signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
-      signOut: vi.fn(),
+// Mock @clerk/nextjs
+vi.mock("@clerk/nextjs", () => ({
+  useAuth: () => ({
+    isLoaded: true,
+    isSignedIn: true,
+    userId: "user_test_123",
+    user: {
+      primaryEmailAddress: { emailAddress: "test@example.com" },
+      firstName: "Test",
+      lastName: "User",
     },
+  }),
+  useClerk: () => ({
+    signOut: vi.fn(),
+  }),
+  ClerkProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SignIn: () => <div data-testid="clerk-sign-in">SignIn</div>,
+  SignUp: () => <div data-testid="clerk-sign-up">SignUp</div>,
+}));
+
+// Mock @clerk/nextjs/server
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => ({
+    getToken: vi.fn().mockResolvedValue("test-token"),
+    userId: "user_test_123",
   }),
 }));
