@@ -8,6 +8,7 @@ from typing import Any
 from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.services.job_discovery import IngestResult
@@ -126,7 +127,52 @@ async def api_discovery_job(
         session.add(log_entry)
         await session.commit()
 
+        # Schedule background detail fetches for jobs with short descriptions
+        if result.new_count > 0:
+            try:
+                redis = await ctx["redis"]
+                await _schedule_detail_fetches(redis, session)
+            except Exception as exc:
+                logger.warning(f"Failed to schedule detail fetches: {exc}")
+
         return result.model_dump()
+
+
+async def _schedule_detail_fetches(redis: object, session: AsyncSession) -> None:
+    """Find recently ingested jobs with short descriptions and enqueue detail fetches."""
+    from app.models.base import JobSource
+    from app.models.job import Job
+    from app.services.job_sources import ADAPTER_REGISTRY
+    from sqlalchemy import select
+
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    cutoff_naive = cutoff.replace(tzinfo=None)
+
+    detail_sources = {"jsearch", "adzuna", "reed"} & set(ADAPTER_REGISTRY.keys())
+
+    for source_name in detail_sources:
+        stmt = (
+            select(Job.id, Job.external_id)
+            .where(
+                Job.source == JobSource(source_name),
+                Job.created_at >= cutoff_naive,
+            )
+        )
+        rows = (await session.execute(stmt)).all()
+
+        for job_id, external_id in rows:
+            job_stmt = select(Job.description).where(Job.id == job_id)
+            desc_result = await session.execute(job_stmt)
+            desc = desc_result.scalar_one_or_none() or ""
+            if len(desc.strip()) < 200:
+                await redis.enqueue_job(
+                    "fetch_job_detail_job",
+                    source_name,
+                    str(external_id),
+                    _queue_name=QUEUE_JOBS,
+                )
 
 
 async def match_jobs_job(
@@ -291,6 +337,61 @@ async def sweep_stale_ats_detections(ctx: dict[str, Any]) -> None:
             )
 
 
+async def fetch_job_detail_job(
+    ctx: dict[str, Any],
+    source_name: str,
+    external_id: str,
+) -> dict[str, Any]:
+    """ARQ worker: fetch full details for a single job and update the database."""
+    from app.database import async_session_factory
+    from app.models.base import JobSource
+    from app.services.job_discovery import JobDiscoveryService
+    from app.services.job_sources import ADAPTER_REGISTRY
+
+    adapter_cls = ADAPTER_REGISTRY.get(source_name)
+    if not adapter_cls:
+        return {"status": "skipped", "reason": f"Unknown source: {source_name}"}
+
+    async with async_session_factory() as session:
+        from app.models.job import Job
+        from sqlalchemy import select
+
+        result_stmt = await session.execute(
+            select(Job).where(
+                Job.source == JobSource(source_name),
+                Job.external_id == external_id,
+            )
+        )
+        job = result_stmt.scalar_one_or_none()
+        if job is None:
+            return {"status": "skipped", "reason": "job_not_found"}
+
+        if job.description and len(job.description.strip()) >= 200:
+            return {"status": "skipped", "reason": "already_has_description"}
+
+        try:
+            import httpx
+
+            adapter = adapter_cls()
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+                detail = await adapter.fetch_detail(client, external_id)
+
+            if detail and detail.get("description"):
+                job.description = detail["description"]
+                if detail.get("salary_min") and not job.salary_min:
+                    job.salary_min = detail["salary_min"]
+                if detail.get("salary_max") and not job.salary_max:
+                    job.salary_max = detail["salary_max"]
+                session.add(job)
+                await session.commit()
+                return {"status": "completed", "description_length": len(job.description)}
+
+            return {"status": "skipped", "reason": "no_detail_returned"}
+        except Exception as exc:
+            logger.warning(f"Failed to fetch detail for {source_name}/{external_id}: {exc}")
+            return {"status": "failed", "error": str(exc)}
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     logger.info("Job worker starting")
 
@@ -301,7 +402,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 class JobWorkerSettings:
     queue_name = "arq:queue:jobs"
-    functions = [linkedin_discovery_job, api_discovery_job, match_jobs_job, ats_detect_job]
+    functions = [linkedin_discovery_job, api_discovery_job, match_jobs_job, ats_detect_job, fetch_job_detail_job]
     cron_jobs = [
         cron(
             sweep_stale_ats_detections,

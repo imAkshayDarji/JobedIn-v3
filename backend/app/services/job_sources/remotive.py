@@ -5,7 +5,7 @@ from app.services.job_sources.base import JobSourceAdapter
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://remotive.com/api/remote-jobs/search"
+BASE_URL = "https://remotive.com/api/remote-jobs"
 
 
 class RemotiveAdapter(JobSourceAdapter):

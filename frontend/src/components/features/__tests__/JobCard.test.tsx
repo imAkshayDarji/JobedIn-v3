@@ -15,6 +15,7 @@ const baseJob: JobListItem = {
   source_url: "https://linkedin.com/jobs/1",
   salary_min: 120000,
   salary_max: 180000,
+  salary_currency: "USD",
   experience_level: "Senior",
   job_type: "Full-time",
   remote_policy: "remote",

@@ -58,6 +58,7 @@ class JobListItem(BaseModel):
     source_url: str | None = None
     salary_min: int | None = None
     salary_max: int | None = None
+    salary_currency: str = "USD"
     experience_level: str | None = None
     job_type: str | None = None
     remote_policy: str | None = None

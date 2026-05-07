@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.config import settings
 from app.services.job_sources.base import JobSourceAdapter
 
@@ -29,6 +31,59 @@ class JSearchAdapter(JobSourceAdapter):
         return {
             "X-RapidAPI-Key": settings.JSEARCH_API_KEY,
             "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+        }
+
+    async def fetch_detail(
+        self,
+        client: httpx.AsyncClient,
+        external_id: str,
+    ) -> dict | None:
+        detail_url = "https://jsearch.p.rapidapi.com/job-details"
+        headers = self.build_headers()
+        params = {"job_id": external_id, "extended_publisher_details": "false"}
+        data = await self._make_request(client, detail_url, params=params, headers=headers)
+
+        raw_jobs = data.get("data") or []
+        if not raw_jobs or not isinstance(raw_jobs[0], dict):
+            return None
+
+        raw = raw_jobs[0]
+        title = (raw.get("job_title") or "").strip()
+        company = (raw.get("employer_name") or "").strip()
+        if not title or not company:
+            return None
+
+        description = raw.get("job_description") or None
+        location = raw.get("job_city") or raw.get("job_country") or ""
+        if raw.get("job_state"):
+            location = f"{raw.get('job_city', '')}, {raw['job_state']}".strip(", ")
+
+        salary_min = raw.get("job_min_salary")
+        salary_max = raw.get("job_max_salary")
+        salary_currency = raw.get("job_salary_currency") or "USD"
+        job_type = raw.get("job_employment_type") or None
+        remote = raw.get("job_is_remote")
+
+        remote_policy = None
+        if remote is True:
+            remote_policy = "remote"
+        elif remote is False:
+            remote_policy = "onsite"
+
+        source_url = raw.get("job_apply_link") or raw.get("job_google_link") or ""
+
+        return {
+            "external_id": str(external_id),
+            "title": title,
+            "company": company,
+            "location": location.strip() or None,
+            "source_url": source_url,
+            "description": description,
+            "salary_min": int(salary_min) if salary_min else None,
+            "salary_max": int(salary_max) if salary_max else None,
+            "salary_currency": salary_currency,
+            "job_type": job_type,
+            "remote_policy": remote_policy,
         }
 
     def _map_response(self, data: dict) -> list[dict]:
