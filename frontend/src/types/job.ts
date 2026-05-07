@@ -22,6 +22,7 @@ export interface JobListItem {
   source_url: string | null;
   salary_min: number | null;
   salary_max: number | null;
+  salary_currency: string;
   experience_level: string | null;
   job_type: string | null;
   remote_policy: string | null;

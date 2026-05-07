@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.config import settings
 from app.services.job_sources.base import JobSourceAdapter
 
@@ -30,6 +32,47 @@ class AdzunaAdapter(JobSourceAdapter):
 
     def build_headers(self) -> dict | None:
         return None
+
+    async def fetch_detail(
+        self,
+        client: httpx.AsyncClient,
+        external_id: str,
+    ) -> dict | None:
+        detail_url = f"https://api.adzuna.com/v1/api/jobs/gb/{external_id}"
+        params: dict[str, str] = {
+            "app_id": settings.ADZUNA_APP_ID,
+            "app_key": settings.ADZUNA_APP_KEY,
+            "content-type": "application/json",
+        }
+        data = await self._make_request(client, detail_url, params=params)
+
+        title = (data.get("title") or "").strip()
+        company_data = data.get("company", {})
+        company = (company_data.get("display_name", "") if isinstance(company_data, dict) else str(company_data)).strip()
+        if not title or not company:
+            return None
+
+        description = data.get("description") or None
+        location_data = data.get("location", {})
+        location = (location_data.get("display_name", "") if isinstance(location_data, dict) else "").strip()
+        salary_min = data.get("salary_min")
+        salary_max = data.get("salary_max")
+        salary_currency = "GBP"
+        source_url = data.get("redirect_url") or ""
+
+        return {
+            "external_id": str(external_id),
+            "title": title,
+            "company": company,
+            "location": location or None,
+            "source_url": source_url,
+            "description": description,
+            "salary_min": int(salary_min) if salary_min else None,
+            "salary_max": int(salary_max) if salary_max else None,
+            "salary_currency": salary_currency,
+            "job_type": None,
+            "remote_policy": None,
+        }
 
     def _map_response(self, data: dict) -> list[dict]:
         raw_jobs = data.get("results") or []

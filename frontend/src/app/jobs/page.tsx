@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { JobCard } from "@/components/features/JobCard";
+import { ApplyModal } from "@/components/features/ApplyModal";
+import { BulkActionToolbar } from "@/components/features/BulkActionToolbar";
 import {
   listJobs,
   matchJobs,
@@ -10,6 +12,8 @@ import {
   discoverJobs,
   getDiscoverStatus,
   getSourcesStatus,
+  saveJob,
+  unsaveJob,
 } from "@/lib/api/jobs";
 import type { JobListItem, SourceStatus } from "@/types/job";
 
@@ -34,6 +38,12 @@ export default function JobsPage() {
   const [matchTaskId, setMatchTaskId] = useState<string | null>(null);
   const [discoverStatus, setDiscoverStatus] = useState<string | null>(null);
   const [sourceStatuses, setSourceStatuses] = useState<SourceStatus[]>([]);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [applyModalJobId, setApplyModalJobId] = useState<string | null>(null);
+  const [applyModalJobTitle, setApplyModalJobTitle] = useState("");
+  const [applyModalCompany, setApplyModalCompany] = useState("");
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   const matchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -213,13 +223,72 @@ export default function JobsPage() {
     }, 3000);
   }
 
+  function toggleSelect(jobId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function handleSaveFromCard(jobId: string) {
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job) return;
+
+    if (job.is_saved) {
+      try {
+        await unsaveJob(jobId);
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        await saveJob(jobId);
+      } catch {
+        // ignore
+      }
+    }
+    loadJobs(true);
+  }
+
+  async function handleApplyFromCard(jobId: string) {
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job) return;
+
+    setApplyingId(jobId);
+
+    if (!job.is_saved) {
+      try {
+        await saveJob(jobId);
+        loadJobs(true);
+      } catch {
+        // May already be saved
+      }
+    }
+
+    // After saving, show apply modal
+    setApplyModalJobId(jobId);
+    setApplyModalJobTitle(job.title);
+    setApplyModalCompany(job.company);
+    setApplyingId(null);
+  }
+
   const linkedinStatus = sourceStatuses.find((s) => s.name === "linkedin");
   const remaining = total - jobs.length;
   const isMatchBusy = matchStatus === "pending" || matchStatus === "in_progress";
+  const showBulkToolbar = selectedIds.size >= 2;
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className={`mx-auto max-w-7xl px-6 py-8 ${showBulkToolbar ? "pb-24" : ""}`}>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
@@ -368,7 +437,15 @@ export default function JobsPage() {
           <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {jobs.map((job) => (
-                <JobCard key={job.id} job={job} isSaved={job.is_saved} />
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  isSaved={job.is_saved}
+                  selected={selectedIds.has(job.id)}
+                  onToggleSelect={toggleSelect}
+                  onSave={handleSaveFromCard}
+                  onApply={handleApplyFromCard}
+                />
               ))}
             </div>
             {remaining > 0 && (
@@ -385,6 +462,36 @@ export default function JobsPage() {
           </>
         )}
       </div>
+
+      {showBulkToolbar && (
+        <BulkActionToolbar
+          selectedJobIds={Array.from(selectedIds)}
+          onClearSelection={clearSelection}
+          onActionComplete={() => {
+            clearSelection();
+            loadJobs(true);
+          }}
+        />
+      )}
+
+      {applyModalJobId && (
+        <ApplyModal
+          applicationId={applyModalJobId}
+          jobTitle={applyModalJobTitle}
+          companyName={applyModalCompany}
+          onClose={() => {
+            setApplyModalJobId(null);
+            setApplyModalJobTitle("");
+            setApplyModalCompany("");
+          }}
+          onCompleted={() => {
+            setApplyModalJobId(null);
+            setApplyModalJobTitle("");
+            setApplyModalCompany("");
+            loadJobs(true);
+          }}
+        />
+      )}
     </AppLayout>
   );
 }
