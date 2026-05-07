@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { generateCoverLetterManual, getCoverLetterStatus } from "@/lib/api/cover-letters";
+import { generateCoverLetter, generateCoverLetterManual, getCoverLetterStatus } from "@/lib/api/cover-letters";
+import { getJob } from "@/lib/api/jobs";
+import type { JobDetail } from "@/types/job";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 80;
@@ -19,6 +21,9 @@ const TONE_OPTIONS: { value: Tone; label: string; description: string }[] = [
 
 export default function GenerateCoverLetterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const jobId = searchParams.get("job_id");
+
   const [jobDescription, setJobDescription] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
@@ -26,6 +31,56 @@ export default function GenerateCoverLetterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [coverLetterId, setCoverLetterId] = useState<string | null>(null);
+
+  const [jobContext, setJobContext] = useState<JobDetail | null>(null);
+  const [jobContextLoading, setJobContextLoading] = useState(false);
+
+  useEffect(() => {
+    if (jobId) {
+      loadJobContext(jobId);
+    }
+  }, [jobId]);
+
+  async function loadJobContext(id: string) {
+    setJobContextLoading(true);
+    try {
+      const job = await getJob(id);
+      setJobContext(job);
+      setJobDescription(job.description || "");
+      setCompanyName(job.company);
+      setJobTitle(job.title);
+
+      await handleGenerateFromJob(id);
+    } catch {
+      setError("Failed to load job details. You can still use the manual form below.");
+    } finally {
+      setJobContextLoading(false);
+    }
+  }
+
+  async function handleGenerateFromJob(id: string) {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await generateCoverLetter({ job_id: id, tone });
+      setCoverLetterId(result.cover_letter_id);
+
+      if (result.status === "completed") {
+        router.push(`/cover-letters/${result.cover_letter_id}`);
+        return;
+      }
+
+      startPolling(result.cover_letter_id);
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === "object" && "detail" in err
+          ? (err as { detail: string }).detail
+          : "Failed to start cover letter generation. Please try again.";
+      setError(message);
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,38 +104,7 @@ export default function GenerateCoverLetterPage() {
         return;
       }
 
-      let attempts = 0;
-      const poll = async () => {
-        try {
-          const status = await getCoverLetterStatus(result.cover_letter_id);
-          if (status.status === "completed") {
-            router.push(`/cover-letters/${result.cover_letter_id}`);
-            return;
-          }
-          if (status.status === "failed") {
-            setError("Cover letter generation failed. Please try again.");
-            setLoading(false);
-            return;
-          }
-          attempts++;
-          if (attempts >= MAX_POLL_ATTEMPTS) {
-            setError("Cover letter generation is taking too long. Check your cover letters list.");
-            setLoading(false);
-            return;
-          }
-          setTimeout(poll, POLL_INTERVAL_MS);
-        } catch {
-          attempts++;
-          if (attempts >= MAX_POLL_ATTEMPTS) {
-            setError("Failed to check generation status. Please check your cover letters list.");
-            setLoading(false);
-            return;
-          }
-          setTimeout(poll, POLL_INTERVAL_MS);
-        }
-      };
-
-      setTimeout(poll, POLL_INTERVAL_MS);
+      startPolling(result.cover_letter_id);
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "detail" in err
@@ -89,6 +113,40 @@ export default function GenerateCoverLetterPage() {
       setError(message);
       setLoading(false);
     }
+  }
+
+  function startPolling(id: string) {
+    let attempts = 0;
+    const poll = async () => {
+      try {
+        const status = await getCoverLetterStatus(id);
+        if (status.status === "completed") {
+          router.push(`/cover-letters/${id}`);
+          return;
+        }
+        if (status.status === "failed") {
+          setError("Cover letter generation failed. Please try again.");
+          setLoading(false);
+          return;
+        }
+        attempts++;
+        if (attempts >= MAX_POLL_ATTEMPTS) {
+          setError("Cover letter generation is taking too long. Check your cover letters list.");
+          setLoading(false);
+          return;
+        }
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch {
+        attempts++;
+        if (attempts >= MAX_POLL_ATTEMPTS) {
+          setError("Failed to check generation status. Please check your cover letters list.");
+          setLoading(false);
+          return;
+        }
+        setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    };
+    setTimeout(poll, POLL_INTERVAL_MS);
   }
 
   const descriptionLength = jobDescription.length;
@@ -111,11 +169,13 @@ export default function GenerateCoverLetterPage() {
             Generate Cover Letter
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Paste a job description and we&apos;ll create a tailored cover letter for you.
+            {jobContext
+              ? `Creating a cover letter for ${jobContext.title} at ${jobContext.company}`
+              : "Paste a job description and we'll create a tailored cover letter for you."}
           </p>
         </div>
 
-        {loading ? (
+        {loading || jobContextLoading ? (
           <div className="text-center py-16">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 mb-4">
               <svg className="h-8 w-8 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -127,7 +187,7 @@ export default function GenerateCoverLetterPage() {
               Generating your cover letter...
             </h3>
             <p className="mt-2 text-sm text-gray-500">
-              This usually takes 15-60 seconds. We&apos;ll redirect you when it&apos;s ready.
+              This usually takes 15-60 seconds. We'll redirect you when it's ready.
             </p>
           </div>
         ) : (

@@ -64,6 +64,19 @@ class JobSourceAdapter(ABC):
         data = await self._make_request(client, url, params=params, headers=headers)
         return self._map_response(data)
 
+    async def fetch_detail(
+        self,
+        client: httpx.AsyncClient,
+        external_id: str,
+    ) -> dict | None:
+        """Fetch full details for a single job by its external ID.
+
+        Returns a normalized job dict (same shape as _map_response items)
+        or None if the detail endpoint is not available / the job was not found.
+        Subclasses should override this if the source has a detail endpoint.
+        """
+        return None
+
     async def _make_request(
         self,
         client: httpx.AsyncClient,

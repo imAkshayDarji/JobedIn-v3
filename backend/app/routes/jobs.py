@@ -171,24 +171,35 @@ async def discover_jobs(
             )
         keywords = target_roles
 
+    if not api_sources and not needs_linkedin:
+        from app.services.job_sources import ADAPTER_REGISTRY
+        api_sources = list(ADAPTER_REGISTRY.keys())
+
     try:
+        job_ids: list[str] = []
         if needs_linkedin:
-            job_id = await _enqueue_linkedin_discovery_job(
+            lid = await _enqueue_linkedin_discovery_job(
                 str(user.id),
                 keywords,
                 request.location,
             )
-        elif api_sources:
-            job_id = await _enqueue_api_discovery_job(
+            job_ids.append(lid)
+
+        if api_sources:
+            aid = await _enqueue_api_discovery_job(
                 keywords,
                 request.location,
                 api_sources,
             )
-        else:
+            job_ids.append(aid)
+
+        if not job_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No discovery sources available. Configure LinkedIn credentials or specify API sources.",
             )
+
+        primary_job_id = job_ids[0]
     except HTTPException:
         raise
     except Exception as exc:
@@ -200,12 +211,12 @@ async def discover_jobs(
 
     logger.info(
         "job_discovery_enqueued",
-        extra={"user_id": str(user.id), "keywords": keywords, "job_id": job_id},
+        extra={"user_id": str(user.id), "keywords": keywords, "job_ids": job_ids},
     )
 
     return JobDiscoverResponse(
-        job_id=job_id,
-        message="Discovery started",
+        job_id=primary_job_id,
+        message=f"Discovery started ({len(job_ids)} source group{'s' if len(job_ids) > 1 else ''})",
     )
 
 
@@ -393,6 +404,7 @@ async def list_jobs(
                 source_url=job.source_url,
                 salary_min=job.salary_min,
                 salary_max=job.salary_max,
+                salary_currency=job.salary_currency or "USD",
                 experience_level=job.experience_level.value if job.experience_level else None,
                 job_type=job.job_type,
                 remote_policy=job.remote_policy.value if job.remote_policy else None,

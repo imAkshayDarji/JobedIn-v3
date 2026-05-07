@@ -1,22 +1,78 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { generateResumeManual, getResumeStatus } from "@/lib/api/resumes";
+import { generateResume, generateResumeManual, getResumeStatus } from "@/lib/api/resumes";
+import { getJob } from "@/lib/api/jobs";
+import type { JobDetail } from "@/types/job";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 80;
 
 export default function GenerateResumePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const jobId = searchParams.get("job_id");
+
   const [jobDescription, setJobDescription] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resumeId, setResumeId] = useState<string | null>(null);
+
+  const [jobContext, setJobContext] = useState<JobDetail | null>(null);
+  const [jobContextLoading, setJobContextLoading] = useState(false);
+
+  useEffect(() => {
+    if (jobId) {
+      loadJobContext(jobId);
+    }
+  }, [jobId]);
+
+  async function loadJobContext(id: string) {
+    setJobContextLoading(true);
+    try {
+      const job = await getJob(id);
+      setJobContext(job);
+      setJobDescription(job.description || "");
+      setCompanyName(job.company);
+      setJobTitle(job.title);
+
+      // Auto-trigger generation if we have a job
+      await handleGenerateFromJob(id);
+    } catch {
+      setError("Failed to load job details. You can still use the manual form below.");
+    } finally {
+      setJobContextLoading(false);
+    }
+  }
+
+  async function handleGenerateFromJob(id: string) {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await generateResume({ job_id: id });
+      setResumeId(result.resume_id);
+
+      if (result.status === "completed") {
+        router.push(`/resumes/${result.resume_id}`);
+        return;
+      }
+
+      startPolling(result.resume_id);
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === "object" && "detail" in err
+          ? (err as { detail: string }).detail
+          : "Failed to start resume generation. Please try again.";
+      setError(message);
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,45 +90,12 @@ export default function GenerateResumePage() {
 
       setResumeId(result.resume_id);
 
-      // If already completed (dedup), navigate immediately
       if (result.status === "completed") {
         router.push(`/resumes/${result.resume_id}`);
         return;
       }
 
-      // Poll for completion
-      let attempts = 0;
-      const poll = async () => {
-        try {
-          const status = await getResumeStatus(result.resume_id);
-          if (status.status === "completed") {
-            router.push(`/resumes/${result.resume_id}`);
-            return;
-          }
-          if (status.status === "failed") {
-            setError("Resume generation failed. Please try again.");
-            setLoading(false);
-            return;
-          }
-          attempts++;
-          if (attempts >= MAX_POLL_ATTEMPTS) {
-            setError("Resume generation is taking too long. Check your resumes list.");
-            setLoading(false);
-            return;
-          }
-          setTimeout(poll, POLL_INTERVAL_MS);
-        } catch {
-          attempts++;
-          if (attempts >= MAX_POLL_ATTEMPTS) {
-            setError("Failed to check generation status. Please check your resumes list.");
-            setLoading(false);
-            return;
-          }
-          setTimeout(poll, POLL_INTERVAL_MS);
-        }
-      };
-
-      setTimeout(poll, POLL_INTERVAL_MS);
+      startPolling(result.resume_id);
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "detail" in err
@@ -81,6 +104,40 @@ export default function GenerateResumePage() {
       setError(message);
       setLoading(false);
     }
+  }
+
+  function startPolling(id: string) {
+    let attempts = 0;
+    const poll = async () => {
+      try {
+        const status = await getResumeStatus(id);
+        if (status.status === "completed") {
+          router.push(`/resumes/${id}`);
+          return;
+        }
+        if (status.status === "failed") {
+          setError("Resume generation failed. Please try again.");
+          setLoading(false);
+          return;
+        }
+        attempts++;
+        if (attempts >= MAX_POLL_ATTEMPTS) {
+          setError("Resume generation is taking too long. Check your resumes list.");
+          setLoading(false);
+          return;
+        }
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch {
+        attempts++;
+        if (attempts >= MAX_POLL_ATTEMPTS) {
+          setError("Failed to check generation status. Please check your resumes list.");
+          setLoading(false);
+          return;
+        }
+        setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    };
+    setTimeout(poll, POLL_INTERVAL_MS);
   }
 
   const descriptionLength = jobDescription.length;
@@ -103,11 +160,13 @@ export default function GenerateResumePage() {
             Generate Resume
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Paste a job description and we&apos;ll create a tailored resume optimized for ATS.
+            {jobContext
+              ? `Creating a tailored resume for ${jobContext.title} at ${jobContext.company}`
+              : "Paste a job description and we'll create a tailored resume optimized for ATS."}
           </p>
         </div>
 
-        {loading ? (
+        {loading || jobContextLoading ? (
           <div className="text-center py-16">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-50 mb-4">
               <svg className="h-8 w-8 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -119,7 +178,7 @@ export default function GenerateResumePage() {
               Generating your tailored resume...
             </h3>
             <p className="mt-2 text-sm text-gray-500">
-              This usually takes 30-120 seconds. We&apos;ll redirect you when it&apos;s ready.
+              This usually takes 30-120 seconds. We'll redirect you when it's ready.
             </p>
           </div>
         ) : (

@@ -7,6 +7,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { JobMatchScore } from "@/components/features/JobMatchScore";
 import { ApplyModal } from "@/components/features/ApplyModal";
 import { getJob, getJobScore, saveJob, unsaveJob } from "@/lib/api/jobs";
+import { formatSalary } from "@/lib/utils";
 import type { JobDetail, MatchBreakdown } from "@/types/job";
 
 export default function JobDetailPage() {
@@ -183,7 +184,7 @@ export default function JobDetailPage() {
                 <div>
                   <span className="text-gray-500">Salary</span>
                   <p className="font-medium text-gray-900">
-                    ${job.salary_min.toLocaleString()} - ${job.salary_max.toLocaleString()} {job.salary_currency}
+                    {formatSalary(job.salary_min, job.salary_max, job.salary_currency)}
                   </p>
                 </div>
               )}
@@ -204,9 +205,10 @@ export default function JobDetailPage() {
             {job.description && (
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-2">Description</h2>
-                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-                  {job.description}
-                </div>
+                <div
+                  className="prose prose-sm max-w-none text-gray-700"
+                  dangerouslySetInnerHTML={{ __html: job.description }}
+                />
               </div>
             )}
 
