@@ -126,6 +126,23 @@ class JobDiscoveryService:
         await self.session.commit()
         return result
 
+    def get_short_description_jobs(
+        self,
+        result: IngestResult,
+        raw_jobs: list[dict],
+        source: JobSource,
+        min_length: int = 200,
+    ) -> list[tuple[str, str]]:
+        """Return (job_id, external_id) pairs for newly ingested jobs with short descriptions."""
+        short_jobs: list[tuple[str, str]] = []
+        for raw in raw_jobs:
+            description = raw.get("description") or ""
+            if len(description.strip()) < min_length:
+                external_id = raw.get("external_id")
+                if external_id:
+                    short_jobs.append((source.value, str(external_id)))
+        return short_jobs
+
     async def run_linkedin_discovery(
         self,
         user_id: uuid.UUID,
