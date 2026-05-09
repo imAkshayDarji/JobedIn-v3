@@ -1,7 +1,8 @@
-import importlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from app.services.redis_pool import redis_settings_from_url
 
 
 @pytest.fixture(autouse=True)
@@ -62,3 +63,23 @@ async def test_close_redis_when_none():
     assert redis_mod._redis is None
     await redis_mod.close_redis()
     assert redis_mod._redis is None
+
+
+def test_redis_settings_from_url_with_password_and_db():
+    settings = redis_settings_from_url(
+        "redis://default:secret%40word@redis.example.internal:6380/2",
+    )
+    assert settings.host == "redis.example.internal"
+    assert settings.port == 6380
+    assert settings.database == 2
+    assert settings.username == "default"
+    assert settings.password == "secret@word"
+    assert settings.ssl is False
+
+
+def test_redis_settings_from_url_rediss_defaults():
+    settings = redis_settings_from_url("rediss://redis.example.com")
+    assert settings.host == "redis.example.com"
+    assert settings.port == 6379
+    assert settings.database == 0
+    assert settings.ssl is True
