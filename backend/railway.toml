@@ -1,5 +1,13 @@
-# Railway config-as-code for the FastAPI API service.
-# Set the service Root Directory to `backend`, or set custom config path to `/backend/railway.toml`.
+# Railway config-as-code for the FastAPI API service only (uvicorn serves /health).
+#
+# Dashboard: Root Directory `backend`, Config as Code path `/backend/railway.toml`
+# (path is from repo root; it does not follow Root Directory).
+#
+# Arq worker services (job_worker, ai_worker, apply_worker): use
+# `/backend/railway.worker.json` so HTTP healthchecks are disabled (workers do not listen on PORT).
+# Required on all app/worker services: DATABASE_URL from Postgres (never leave blank);
+# workers also need REDIS_URL and the same start command you use in docker-compose (arq ...).
+#
 # Reference: https://docs.railway.app/reference/config-as-code
 
 [build]
