@@ -10,7 +10,11 @@ from app.middleware.error_handler import ErrorHandlerMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.middleware.error_handler import ErrorHandlerMiddleware
-from app.middleware.rate_limit import _key_func, rate_limit_exceeded_handler
+from app.middleware.rate_limit import (
+    _key_func,
+    rate_limit_exceeded_handler,
+    resolve_slowapi_storage_uri,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +129,26 @@ async def test_error_handler_sentry_breadcrumb_and_context(error_middleware):
         "request",
         {"method": "GET", "path": "/test", "query": ""},
     )
+
+
+def test_resolve_slowapi_storage_uri_blank():
+    assert resolve_slowapi_storage_uri("") == "memory://"
+    assert resolve_slowapi_storage_uri("   ") == "memory://"
+    assert resolve_slowapi_storage_uri("\t\n") == "memory://"
+
+
+def test_resolve_slowapi_storage_uri_redis():
+    assert resolve_slowapi_storage_uri("redis://localhost:6379/0") == "redis://localhost:6379/0"
+    assert resolve_slowapi_storage_uri("  redis://x  ") == "redis://x"
+
+
+def test_resolve_slowapi_storage_uri_rediss():
+    assert resolve_slowapi_storage_uri("rediss://user:pass@host:6379/0") == "rediss://user:pass@host:6379/0"
+
+
+def test_resolve_slowapi_storage_uri_invalid_scheme():
+    assert resolve_slowapi_storage_uri("\\t") == "memory://"
+    assert resolve_slowapi_storage_uri("postgres://localhost/db") == "memory://"
 
 
 # ---------------------------------------------------------------------------
