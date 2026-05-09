@@ -18,7 +18,9 @@ ENV PORT=8000
 # Single worker by default keeps memory predictable on small Railway instances; override with UVICORN_WORKERS.
 ENV UVICORN_WORKERS=1
 
-EXPOSE 8000
+# Railway defaults PORT to 8080 at runtime; public routing often aligns with EXPOSE.
+# Local/docker-compose still maps host 8000 -> container via compose file / ENV PORT default above.
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD /bin/sh -c 'python -c "import os, urllib.request; p=os.environ.get(\"PORT\", \"8000\"); urllib.request.urlopen(\"http://127.0.0.1:\" + p + \"/health\")"' || exit 1
