@@ -57,7 +57,7 @@ describe("JobCard", () => {
 
   it("links to correct job detail URL", () => {
     render(<JobCard job={baseJob} />);
-    const link = screen.getByRole("link");
+    const link = screen.getByRole("link", { name: "Senior Frontend Engineer" });
     expect(link).toHaveAttribute("href", "/jobs/job-1");
   });
 });
