@@ -178,7 +178,7 @@ async def match_jobs_job(
 
         try:
             results = await scorer.score_jobs_batch(
-                user_id=uuid.UUID(user_id),
+                user_id=user_id,
             )
             return {
                 "user_id": user_id,
