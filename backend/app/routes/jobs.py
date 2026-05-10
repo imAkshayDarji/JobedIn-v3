@@ -186,6 +186,8 @@ async def discover_jobs(
             )
         keywords = target_roles
 
+    location = request.location or profile.location
+
     if not api_sources and not needs_linkedin:
         api_sources = active_api_sources()
 
@@ -195,14 +197,14 @@ async def discover_jobs(
             lid = await _enqueue_linkedin_discovery_job(
                 str(user.id),
                 keywords,
-                request.location,
+                location,
             )
             job_ids.append(lid)
 
         if api_sources:
             aid = await _enqueue_api_discovery_job(
                 keywords,
-                request.location,
+                location,
                 api_sources,
             )
             job_ids.append(aid)
