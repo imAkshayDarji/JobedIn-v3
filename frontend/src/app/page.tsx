@@ -1,5 +1,7 @@
+import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "JobedIn - AI-Powered Job Search",
@@ -7,7 +9,12 @@ export const metadata: Metadata = {
     "Find your next role with AI-powered matching, resume optimization, and smart career insights.",
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { userId } = await auth();
+  if (userId) {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
