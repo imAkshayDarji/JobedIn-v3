@@ -39,11 +39,17 @@ class Settings(BaseSettings):
     LINKEDIN_DELAY_MAX_SECONDS: float = 4.0
     LINKEDIN_SESSION_COOLDOWN_HOURS: int = 24
 
+    # JSearch on RapidAPI: set JSEARCH_API_KEY *or* RAPIDAPI_KEY (alias for the same header value).
     JSEARCH_API_KEY: str = ""
+    RAPIDAPI_KEY: str = ""
     ADZUNA_APP_ID: str = ""
     ADZUNA_APP_KEY: str = ""
     REMOTIVE_API_KEY: str = ""
+    # Reed native API (reed.co.uk): plain recruiter API key unless REED_BASIC_TOKEN is set.
     REED_API_KEY: str = ""
+    REED_BASIC_TOKEN: str = ""
+    # Comma-separated API source ids to omit from implicit "all APIs" discovery (explicit requests still honored).
+    DISABLED_API_SOURCES: str = "remotive"
 
     JOB_DISCOVERY_CRON_HOUR: int = 6
 

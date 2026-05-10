@@ -1,3 +1,4 @@
+import base64
 import logging
 
 import httpx
@@ -11,6 +12,32 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://www.reed.co.uk/api/1.0/search"
 
 
+def _reed_plain_api_key() -> str:
+    direct = (settings.REED_API_KEY or "").strip()
+    if direct:
+        return direct
+    rapid = (settings.RAPIDAPI_KEY or "").strip()
+    if rapid:
+        return rapid
+    return (settings.JSEARCH_API_KEY or "").strip()
+
+
+def _reed_auth_header() -> str | None:
+    """Return full Authorization header value ('Basic …') if credentials are configured."""
+    legacy = (settings.REED_BASIC_TOKEN or "").strip()
+    if legacy:
+        decoded = legacy.lstrip()
+        if decoded.lower().startswith("basic "):
+            return decoded.strip()
+        return f"Basic {decoded.strip()}"
+
+    plain = _reed_plain_api_key().strip()
+    if not plain:
+        return None
+    token = base64.b64encode(f"{plain}:".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
+
+
 class ReedAdapter(JobSourceAdapter):
     @property
     def source_name(self) -> str:
@@ -20,6 +47,8 @@ class ReedAdapter(JobSourceAdapter):
         return BASE_URL
 
     def build_params(self, keywords: str, location: str | None) -> dict | None:
+        if not _reed_auth_header():
+            raise JobSourceAuthError(self.source_name)
         params: dict[str, str] = {
             "keywords": keywords,
             "resultsToTake": "20",
@@ -29,11 +58,10 @@ class ReedAdapter(JobSourceAdapter):
         return params
 
     def build_headers(self) -> dict | None:
-        if not settings.REED_API_KEY:
+        header = _reed_auth_header()
+        if not header:
             raise JobSourceAuthError(self.source_name)
-        return {
-            "Authorization": f"Basic {settings.REED_API_KEY}",
-        }
+        return {"Authorization": header}
 
     async def fetch_detail(
         self,

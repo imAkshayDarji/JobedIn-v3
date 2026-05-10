@@ -136,8 +136,16 @@ async def discover_jobs(
             detail=str(exc),
         )
 
-    needs_linkedin = requested_sources is None or "linkedin" in requested_sources
-    api_sources = [s for s in (requested_sources or []) if s != "linkedin"] if requested_sources else []
+    from app.services.job_sources import active_api_sources, disabled_api_sources
+
+    blocked = disabled_api_sources()
+
+    if requested_sources is None:
+        api_sources = active_api_sources()
+        needs_linkedin = True
+    else:
+        api_sources = [s for s in requested_sources if s != "linkedin" and s not in blocked]
+        needs_linkedin = "linkedin" in requested_sources
 
     if needs_linkedin:
         if not profile.linkedin_email or not profile.linkedin_password_encrypted:
@@ -154,12 +162,19 @@ async def discover_jobs(
             elapsed = now - profile.linkedin_last_scraped_at
             cooldown = timedelta(hours=app_settings.LINKEDIN_SESSION_COOLDOWN_HOURS)
             if elapsed < cooldown:
-                remaining = cooldown - elapsed
-                remaining_hours = remaining.total_seconds() / 3600
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cooldown active. Try again in {remaining_hours:.1f} hours.",
+                only_linkedin = (
+                    requested_sources is not None
+                    and len(requested_sources) == 1
+                    and requested_sources[0] == "linkedin"
                 )
+                if only_linkedin:
+                    remaining = cooldown - elapsed
+                    remaining_hours = remaining.total_seconds() / 3600
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Cooldown active. Try again in {remaining_hours:.1f} hours.",
+                    )
+                needs_linkedin = False
 
     keywords = request.keywords
     if not keywords:
@@ -172,8 +187,7 @@ async def discover_jobs(
         keywords = target_roles
 
     if not api_sources and not needs_linkedin:
-        from app.services.job_sources import ADAPTER_REGISTRY
-        api_sources = list(ADAPTER_REGISTRY.keys())
+        api_sources = active_api_sources()
 
     try:
         job_ids: list[str] = []
@@ -274,6 +288,8 @@ async def get_sources_status(
     has_linkedin = bool(profile and profile.linkedin_email and profile.linkedin_password_encrypted)
 
     from app.services.job_sources import ADAPTER_REGISTRY
+    from app.services.job_sources import disabled_api_sources
+    from app.services.job_sources.exceptions import JobSourceAuthError
 
     sources: list[SourceStatusItem] = [
         SourceStatusItem(
@@ -284,16 +300,35 @@ async def get_sources_status(
         ),
     ]
 
+    blocked = disabled_api_sources()
     for name, adapter_cls in ADAPTER_REGISTRY.items():
+        if name in blocked:
+            sources.append(SourceStatusItem(
+                name=name,
+                type="api",
+                available=False,
+                detail="Disabled in server configuration",
+            ))
+            continue
         adapter = adapter_cls()
-        headers = adapter.build_headers()
-        params = adapter.build_params("test", None) or {}
+        try:
+            headers = adapter.build_headers()
+            params = adapter.build_params("probe", None) or {}
+        except JobSourceAuthError:
+            sources.append(SourceStatusItem(
+                name=name,
+                type="api",
+                available=False,
+                detail=f"Requires {name.capitalize()} API credentials",
+            ))
+            continue
         has_key = bool(
-            headers and any(v for v in headers.values())
+            headers and any(bool(v and str(v).strip()) for v in headers.values()),
         ) or bool(
             params and any(
                 k.endswith("_key") or k.endswith("_id") or k == "api_key"
-                for k, v in params.items() if v
+                for k, v in params.items()
+                if v and str(v).strip()
             )
         )
 
@@ -301,10 +336,41 @@ async def get_sources_status(
             name=name,
             type="api",
             available=has_key,
-            detail=f"Requires {name.capitalize()} API key" if not has_key else None,
+            detail=f"Requires {name.capitalize()} API credentials" if not has_key else None,
         ))
 
     return SourcesStatusResponse(sources=sources)
+
+
+@router.get("/sources/debug")
+async def debug_sources_config(
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Diagnostic endpoint to verify API key configuration (values masked)."""
+    from app.services.job_sources import disabled_api_sources
+
+    def _mask(val: str) -> str:
+        if not val:
+            return "<empty>"
+        if len(val) <= 8:
+            return val[:2] + "***"
+        return val[:4] + "..." + val[-4:]
+
+    blocked = disabled_api_sources()
+
+    return {
+        "environment": app_settings.ENVIRONMENT,
+        "disabled_sources": sorted(blocked),
+        "keys": {
+            "JSEARCH_API_KEY": _mask(app_settings.JSEARCH_API_KEY),
+            "RAPIDAPI_KEY": _mask(app_settings.RAPIDAPI_KEY),
+            "ADZUNA_APP_ID": _mask(app_settings.ADZUNA_APP_ID),
+            "ADZUNA_APP_KEY": _mask(app_settings.ADZUNA_APP_KEY),
+            "REED_API_KEY": _mask(app_settings.REED_API_KEY),
+            "REED_BASIC_TOKEN": _mask(app_settings.REED_BASIC_TOKEN),
+            "REMOTIVE_API_KEY": _mask(app_settings.REMOTIVE_API_KEY),
+        },
+    }
 
 
 def _job_list_filters(

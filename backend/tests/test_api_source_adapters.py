@@ -1,3 +1,4 @@
+from base64 import b64encode
 from unittest.mock import patch
 
 import pytest
@@ -24,6 +25,16 @@ def test_adzuna_source_name(adzuna):
 def test_adzuna_build_url(adzuna):
     url = adzuna.build_url("python", "London")
     assert url == "https://api.adzuna.com/v1/api/jobs/gb/search/1"
+
+
+def test_adzuna_build_params_requires_credentials(adzuna):
+    from app.services.job_sources.exceptions import JobSourceAuthError
+
+    with patch("app.services.job_sources.adzuna.settings") as mock_settings:
+        mock_settings.ADZUNA_APP_ID = ""
+        mock_settings.ADZUNA_APP_KEY = ""
+        with pytest.raises(JobSourceAuthError):
+            adzuna.build_params("python", None)
 
 
 @patch("app.services.job_sources.adzuna.settings")
@@ -138,6 +149,38 @@ def test_jsearch_build_params_without_location(jsearch):
 
 
 @patch("app.services.job_sources.jsearch.settings")
+def test_jsearch_raises_without_key(mock_settings, jsearch):
+    from app.services.job_sources.exceptions import JobSourceAuthError
+
+    mock_settings.JSEARCH_API_KEY = ""
+    mock_settings.RAPIDAPI_KEY = ""
+
+    with pytest.raises(JobSourceAuthError):
+        jsearch.build_headers()
+
+
+@patch("app.services.job_sources.jsearch.settings")
+def test_jsearch_build_headers_uses_rapidapi_alias(mock_settings, jsearch):
+    mock_settings.JSEARCH_API_KEY = ""
+    mock_settings.RAPIDAPI_KEY = "alias-rapid-key"
+
+    headers = jsearch.build_headers()
+
+    assert headers is not None
+    assert headers["X-RapidAPI-Key"] == "alias-rapid-key"
+
+
+@patch("app.services.job_sources.jsearch.settings")
+def test_jsearch_build_headers_prefers_primary_key(mock_settings, jsearch):
+    mock_settings.JSEARCH_API_KEY = "primary-key"
+    mock_settings.RAPIDAPI_KEY = "alias-rapid-key"
+
+    headers = jsearch.build_headers()
+
+    assert headers["X-RapidAPI-Key"] == "primary-key"
+
+
+@patch("app.services.job_sources.jsearch.settings")
 def test_jsearch_build_headers(mock_settings, jsearch):
     mock_settings.JSEARCH_API_KEY = "test-rapid-key"
 
@@ -218,7 +261,7 @@ def test_remotive_source_name(remotive):
 
 def test_remotive_build_url(remotive):
     url = remotive.build_url("react", None)
-    assert url == "https://remotive.com/api/remote-jobs/search"
+    assert url == "https://remotive.com/api/remote-jobs"
 
 
 @patch("app.services.job_sources.remotive.settings")
@@ -333,11 +376,14 @@ def test_reed_build_params_without_location(mock_settings, reed):
 @patch("app.services.job_sources.reed.settings")
 def test_reed_build_headers(mock_settings, reed):
     mock_settings.REED_API_KEY = "reed-key-123"
+    mock_settings.REED_BASIC_TOKEN = ""
+    mock_settings.RAPIDAPI_KEY = ""
+    mock_settings.JSEARCH_API_KEY = ""
 
     headers = reed.build_headers()
 
     assert headers is not None
-    assert headers["Authorization"] == "Basic reed-key-123"
+    assert headers["Authorization"] == f"Basic {b64encode(b'reed-key-123:').decode('ascii')}"
 
 
 def test_reed_map_response_success(reed):
@@ -396,6 +442,16 @@ def test_reed_map_response_empty_results(reed):
 # ---------------------------------------------------------------------------
 # Adapter Registry
 # ---------------------------------------------------------------------------
+
+def test_active_api_sources_skips_disabled_remotive():
+    from app.services.job_sources import active_api_sources
+
+    with patch("app.services.job_sources.settings.DISABLED_API_SOURCES", "remotive"):
+        names = active_api_sources()
+
+    assert "remotive" not in names
+    assert "jsearch" in names
+
 
 def test_adapter_registry_contains_all_sources():
     from app.services.job_sources import ADAPTER_REGISTRY

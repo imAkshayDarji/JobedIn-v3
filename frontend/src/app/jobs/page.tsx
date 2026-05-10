@@ -19,6 +19,9 @@ import type { JobListItem, SourceStatus } from "@/types/job";
 
 type SortOption = "match_score" | "created_at" | "salary_max";
 
+/** Boards sent to POST /discover (aligned with backend DISABLED_API_SOURCES; Remotive omitted). */
+const DISCOVER_API_SOURCES: readonly string[] = ["jsearch", "adzuna", "reed"];
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -191,7 +194,7 @@ export default function JobsPage() {
     try {
       setError(false);
       setErrorMessage("");
-      const response = await discoverJobs({ sources: ["jsearch", "adzuna", "remotive", "reed"] });
+      const response = await discoverJobs({ sources: [...DISCOVER_API_SOURCES] });
       setDiscoverStatus("pending");
       pollDiscoverStatus(response.job_id);
     } catch {
@@ -367,7 +370,6 @@ export default function JobsPage() {
             <option value="linkedin">LinkedIn</option>
             <option value="jsearch">JSearch</option>
             <option value="adzuna">Adzuna</option>
-            <option value="remotive">Remotive</option>
             <option value="reed">Reed</option>
           </select>
 

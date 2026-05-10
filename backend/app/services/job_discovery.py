@@ -16,7 +16,7 @@ from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.services.credential_crypto import decrypt_value
 from app.services.job_dedup import deduplicate_jobs
-from app.services.job_sources import ADAPTER_REGISTRY
+from app.services.job_sources import ADAPTER_REGISTRY, active_api_sources, disabled_api_sources
 from app.services.job_sources.exceptions import (
     JobSourceError,
     LinkedInSessionCooldownError,
@@ -206,8 +206,9 @@ class JobDiscoveryService:
         sources: list[str] | None = None,
     ) -> IngestResult:
         """Fetch jobs from API sources in parallel, dedup, and ingest."""
-        source_names = sources or list(ADAPTER_REGISTRY.keys())
-        selected = [s for s in source_names if s in ADAPTER_REGISTRY]
+        source_names = sources if sources is not None else active_api_sources()
+        blocked = disabled_api_sources()
+        selected = [s for s in source_names if s in ADAPTER_REGISTRY and s not in blocked]
 
         if not selected:
             return IngestResult(errors=["No valid API sources specified"])

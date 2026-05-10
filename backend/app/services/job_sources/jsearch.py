@@ -4,10 +4,15 @@ import httpx
 
 from app.config import settings
 from app.services.job_sources.base import JobSourceAdapter
+from app.services.job_sources.exceptions import JobSourceAuthError
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://jsearch.p.rapidapi.com/search"
+
+
+def _effective_rapidapi_key() -> str:
+    return (settings.JSEARCH_API_KEY or settings.RAPIDAPI_KEY).strip()
 
 
 class JSearchAdapter(JobSourceAdapter):
@@ -28,8 +33,11 @@ class JSearchAdapter(JobSourceAdapter):
         }
 
     def build_headers(self) -> dict | None:
+        api_key = _effective_rapidapi_key()
+        if not api_key:
+            raise JobSourceAuthError(self.source_name)
         return {
-            "X-RapidAPI-Key": settings.JSEARCH_API_KEY,
+            "X-RapidAPI-Key": api_key,
             "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
         }
 
