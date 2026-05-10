@@ -26,7 +26,7 @@
 | Day 20 | Auto-Apply | Apply Frontend | DONE | -- |
 | Day 21 | Polish | Error Handling + Edge Cases | DONE | -- |
 | Day 22 | Polish | Testing | DONE | -- |
-| Day 23 | Polish | Deployment + Documentation | DONE | see git + [docs/DEPLOY.md](docs/DEPLOY.md) |
+| Day 23 | Polish | Deployment + Documentation | DONE | `6c82b34` |
 
 ### Day 1 Completion Notes
 - FastAPI backend scaffold with health check endpoint
