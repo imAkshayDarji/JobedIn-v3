@@ -186,7 +186,7 @@ async def discover_jobs(
             )
         keywords = target_roles
 
-    location = request.location or profile.location
+    location = request.location or profile.location or "United Kingdom"
     logger.info(
         "Discovery request: request.location=%r profile.location=%r resolved=%r",
         request.location,
