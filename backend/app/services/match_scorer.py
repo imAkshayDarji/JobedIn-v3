@@ -88,7 +88,7 @@ class MatchScorer:
         self._session = session
         self._staleness_hours = staleness_hours
 
-    async def score_job(self, user_id: uuid.UUID, job_id: uuid.UUID) -> JobMatchResult | None:
+    async def score_job(self, user_id: str | uuid.UUID, job_id: uuid.UUID) -> JobMatchResult | None:
         profile = await self._load_profile(user_id)
         if profile is None:
             return None
@@ -104,7 +104,7 @@ class MatchScorer:
 
     async def score_jobs_batch(
         self,
-        user_id: uuid.UUID,
+        user_id: str | uuid.UUID,
         job_ids: list[uuid.UUID] | None = None,
         chunk_size: int = 100,
     ) -> list[JobMatchResult]:
@@ -150,7 +150,7 @@ class MatchScorer:
         return all_results
 
     async def get_cached_score(
-        self, user_id: uuid.UUID, job_id: uuid.UUID
+        self, user_id: str | uuid.UUID, job_id: uuid.UUID
     ) -> JobMatchResult | None:
         result = await self._session.execute(
             select(JobMatch).where(
@@ -342,7 +342,7 @@ class MatchScorer:
 
         return tokens + bigrams
 
-    async def _load_profile(self, user_id: uuid.UUID) -> CandidateProfile | None:
+    async def _load_profile(self, user_id: str | uuid.UUID) -> CandidateProfile | None:
         stmt = (
             select(CandidateProfile)
             .where(CandidateProfile.user_id == user_id)
@@ -356,7 +356,7 @@ class MatchScorer:
 
     async def _get_unscored_jobs(
         self,
-        user_id: uuid.UUID,
+        user_id: str | uuid.UUID,
         job_ids: list[uuid.UUID] | None = None,
     ) -> list[Job]:
         staleness_cutoff = datetime.utcnow() - timedelta(hours=self._staleness_hours)
@@ -377,7 +377,7 @@ class MatchScorer:
         return list(result.scalars().all())
 
     async def _upsert_match(
-        self, user_id: uuid.UUID, result: JobMatchResult
+        self, user_id: str | uuid.UUID, result: JobMatchResult
     ) -> None:
         stmt = pg_insert(JobMatch).values(
             user_id=user_id,
@@ -409,7 +409,7 @@ class MatchScorer:
         await self._session.commit()
 
     async def _bulk_upsert_matches(
-        self, user_id: uuid.UUID, results: list[JobMatchResult]
+        self, user_id: str | uuid.UUID, results: list[JobMatchResult]
     ) -> None:
         if not results:
             return

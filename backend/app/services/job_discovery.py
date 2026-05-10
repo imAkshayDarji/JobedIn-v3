@@ -213,7 +213,7 @@ class JobDiscoveryService:
         if not selected:
             return IngestResult(errors=["No valid API sources specified"])
 
-        query = " ".join(keywords[:3]) if keywords else ""
+        query = keywords[0] if keywords else ""
         if not query:
             return IngestResult(errors=["No keywords provided"])
 
