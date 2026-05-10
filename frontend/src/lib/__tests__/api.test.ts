@@ -1,13 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, getAuthHeaders, type ApiError } from "../api";
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: () => ({
-    getToken: vi.fn().mockResolvedValue("test-token-123"),
-    userId: "user_test_123",
-  }),
-}));
+function stubWindowClerk() {
+  Object.defineProperty(window, "Clerk", {
+    configurable: true,
+    value: {
+      loaded: true,
+      session: {
+        getToken: vi.fn().mockResolvedValue("test-token-123"),
+      },
+    },
+  });
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(window, "Clerk");
+});
+
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
   addBreadcrumb: vi.fn(),
@@ -25,12 +35,17 @@ vi.mock("sonner", () => ({
 
 describe("getAuthHeaders", () => {
   it("returns Authorization header with Bearer token", async () => {
+    stubWindowClerk();
     const headers = await getAuthHeaders();
     expect(headers).toEqual({ Authorization: "Bearer test-token-123" });
   });
 });
 
 describe("handleResponse (via api.get)", () => {
+  beforeEach(() => {
+    stubWindowClerk();
+  });
+
   it("returns parsed JSON on 200", async () => {
     const data = { id: 1, name: "test" };
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -82,6 +97,10 @@ describe("handleResponse (via api.get)", () => {
 });
 
 describe("api.get", () => {
+  beforeEach(() => {
+    stubWindowClerk();
+  });
+
   it("calls fetch with correct URL and headers", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -105,6 +124,10 @@ describe("api.get", () => {
 });
 
 describe("api.post", () => {
+  beforeEach(() => {
+    stubWindowClerk();
+  });
+
   it("calls fetch with POST method and JSON body", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

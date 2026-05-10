@@ -1,6 +1,13 @@
 import * as Sentry from "@sentry/nextjs";
 import { toast } from "sonner";
 
+interface ClerkLike {
+  loaded?: boolean;
+  session?: {
+    getToken: (options?: { template?: string }) => Promise<string | null | undefined>;
+  };
+}
+
 interface ApiError {
   status: number;
   message: string;
@@ -13,23 +20,34 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
+async function getBrowserClerkAuthHeaders(): Promise<Record<string, string>> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const clerk = (window as Window & { Clerk?: ClerkLike }).Clerk;
+  if (!clerk?.session) {
+    return {};
+  }
+
+  try {
+    const token = await clerk.session.getToken();
+    if (token) {
+      return { Authorization: `Bearer ${token}` };
+    }
+  } catch {
+    return {};
+  }
+
+  return {};
+}
+
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   if (process.env.NEXT_PUBLIC_BYPASS_AUTH === "true") {
     return { "X-Dev-Bypass": "true" };
   }
 
-  try {
-    const { auth } = await import("@clerk/nextjs/server");
-    const { getToken } = await auth();
-    const token = await getToken();
-    if (token) {
-      return { Authorization: `Bearer ${token}` };
-    }
-  } catch {
-    // Not in a server context — try client-side
-  }
-
-  return {};
+  return getBrowserClerkAuthHeaders();
 }
 
 function getBaseUrl(): string {

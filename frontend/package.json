@@ -5,6 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "clerk:doctor": "clerk doctor",
+    "clerk:doctor:fix": "clerk doctor --fix",
+    "clerk:env:dev": "clerk env pull --file .env.local",
+    "clerk:env:prod": "clerk env pull --instance prod --file .env.production.local",
+    "clerk:link": "clerk link",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
