@@ -4,6 +4,7 @@ import httpx
 
 from app.config import settings
 from app.services.job_sources.base import JobSourceAdapter
+from app.services.job_sources.exceptions import JobSourceAuthError
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,13 @@ class AdzunaAdapter(JobSourceAdapter):
         return BASE_URL
 
     def build_params(self, keywords: str, location: str | None) -> dict | None:
+        app_id = (settings.ADZUNA_APP_ID or "").strip()
+        app_key = (settings.ADZUNA_APP_KEY or "").strip()
+        if not app_id or not app_key:
+            raise JobSourceAuthError(self.source_name)
         params: dict[str, str] = {
-            "app_id": settings.ADZUNA_APP_ID,
-            "app_key": settings.ADZUNA_APP_KEY,
+            "app_id": app_id,
+            "app_key": app_key,
             "what": keywords,
             "results_per_page": "20",
             "content-type": "application/json",
@@ -39,9 +44,13 @@ class AdzunaAdapter(JobSourceAdapter):
         external_id: str,
     ) -> dict | None:
         detail_url = f"https://api.adzuna.com/v1/api/jobs/gb/{external_id}"
+        app_id = (settings.ADZUNA_APP_ID or "").strip()
+        app_key = (settings.ADZUNA_APP_KEY or "").strip()
+        if not app_id or not app_key:
+            raise JobSourceAuthError(self.source_name)
         params: dict[str, str] = {
-            "app_id": settings.ADZUNA_APP_ID,
-            "app_key": settings.ADZUNA_APP_KEY,
+            "app_id": app_id,
+            "app_key": app_key,
             "content-type": "application/json",
         }
         data = await self._make_request(client, detail_url, params=params)

@@ -83,8 +83,11 @@ async def api_discovery_job(
     from app.database import async_session_factory
     from app.models.discovery_log import DiscoveryLog
     from app.services.job_discovery import JobDiscoveryService
+    from app.services.job_sources import active_api_sources
 
     start = time.monotonic()
+
+    resolved_sources = sources if sources is not None else active_api_sources()
 
     async with async_session_factory() as session:
         service = JobDiscoveryService(session)
@@ -93,7 +96,7 @@ async def api_discovery_job(
             result = await service.run_api_discovery(
                 keywords=keywords,
                 location=location,
-                sources=sources,
+                sources=resolved_sources,
             )
         except Exception as exc:
             logger.error(f"API discovery failed: {exc}", exc_info=True)
@@ -102,7 +105,7 @@ async def api_discovery_job(
         duration = time.monotonic() - start
 
         log_entry = DiscoveryLog(
-            sources=sources or [],
+            sources=resolved_sources,
             keywords=keywords,
             location=location,
             total_found=result.total_found,
@@ -130,7 +133,7 @@ async def _schedule_detail_fetches(redis: object, session: AsyncSession) -> None
     """Find recently ingested jobs with short descriptions and enqueue detail fetches."""
     from app.models.base import JobSource
     from app.models.job import Job
-    from app.services.job_sources import ADAPTER_REGISTRY
+    from app.services.job_sources import active_api_sources
     from sqlalchemy import select
 
     from datetime import datetime, timedelta, timezone
@@ -138,7 +141,7 @@ async def _schedule_detail_fetches(redis: object, session: AsyncSession) -> None
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
     cutoff_naive = cutoff.replace(tzinfo=None)
 
-    detail_sources = {"jsearch", "adzuna", "reed"} & set(ADAPTER_REGISTRY.keys())
+    detail_sources = {"jsearch", "adzuna", "reed"} & set(active_api_sources())
 
     for source_name in detail_sources:
         stmt = (

@@ -1,3 +1,4 @@
+from app.config import settings
 from app.services.job_sources.adzuna import AdzunaAdapter
 from app.services.job_sources.base import JobSourceAdapter
 from app.services.job_sources.exceptions import (
@@ -27,10 +28,25 @@ ADAPTER_REGISTRY: dict[str, type[JobSourceAdapter]] = {
 
 API_SOURCE_NAMES = set(ADAPTER_REGISTRY.keys())
 
+
+def disabled_api_sources() -> frozenset[str]:
+    return frozenset(
+        name.strip().lower()
+        for name in settings.DISABLED_API_SOURCES.split(",")
+        if name.strip()
+    )
+
+
+def active_api_sources() -> list[str]:
+    blocked = disabled_api_sources()
+    return [name for name in ADAPTER_REGISTRY if name not in blocked]
+
 __all__ = [
     "ADAPTER_REGISTRY",
     "API_SOURCE_NAMES",
+    "active_api_sources",
     "AdzunaAdapter",
+    "disabled_api_sources",
     "JSearchAdapter",
     "JobSourceAdapter",
     "JobSourceAuthError",

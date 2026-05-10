@@ -63,7 +63,7 @@ async def test_discover_requires_linkedin_credentials(monkeypatch: pytest.Monkey
         token, _ = await _setup_user_with_profile(client)
         resp = await client.post(
             "/api/jobs/discover",
-            json={"keywords": ["Python"]},
+            json={"keywords": ["Python"], "sources": ["linkedin"]},
             headers={"Authorization": f"Bearer {token}"},
         )
     assert resp.status_code == 400
@@ -99,7 +99,7 @@ async def test_discover_respects_cooldown(monkeypatch: pytest.MonkeyPatch):
 
         resp = await client.post(
             "/api/jobs/discover",
-            json={"keywords": ["Python"]},
+            json={"keywords": ["Python"], "sources": ["linkedin"]},
             headers={"Authorization": f"Bearer {token}"},
         )
     assert resp.status_code == 400
@@ -138,10 +138,17 @@ async def test_discover_enqueues_job(monkeypatch: pytest.MonkeyPatch):
             await session.commit()
             break
 
-        with patch(
-            "app.routes.jobs._enqueue_linkedin_discovery_job",
-            new_callable=AsyncMock,
-            return_value="test-arq-job-id",
+        with (
+            patch(
+                "app.routes.jobs._enqueue_linkedin_discovery_job",
+                new_callable=AsyncMock,
+                return_value="test-arq-job-id",
+            ),
+            patch(
+                "app.routes.jobs._enqueue_api_discovery_job",
+                new_callable=AsyncMock,
+                return_value="test-api-discovery-id",
+            ),
         ):
             resp = await client.post(
                 "/api/jobs/discover",
@@ -151,7 +158,7 @@ async def test_discover_enqueues_job(monkeypatch: pytest.MonkeyPatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["job_id"] == "test-arq-job-id"
-    assert data["message"] == "Discovery started"
+    assert "Discovery started" in data["message"]
 
 
 @pytest.mark.asyncio
@@ -188,20 +195,27 @@ async def test_discover_uses_target_roles_when_keywords_omitted(
             await session.commit()
             break
 
-        with patch(
-            "app.routes.jobs._enqueue_linkedin_discovery_job",
-            new_callable=AsyncMock,
-        ) as mock_enqueue:
-            mock_enqueue.return_value = "jid-2"
+        with (
+            patch(
+                "app.routes.jobs._enqueue_linkedin_discovery_job",
+                new_callable=AsyncMock,
+            ) as mock_enqueue_l,
+            patch(
+                "app.routes.jobs._enqueue_api_discovery_job",
+                new_callable=AsyncMock,
+            ) as mock_enqueue_api,
+        ):
+            mock_enqueue_l.return_value = "jid-2"
+            mock_enqueue_api.return_value = "jid-api"
             resp = await client.post(
                 "/api/jobs/discover",
                 json={},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resp.status_code == 200
-        mock_enqueue.assert_awaited_once()
-        keywords_arg = mock_enqueue.await_args[0][1]
-        assert isinstance(keywords_arg, list)
+        mock_enqueue_l.assert_awaited_once()
+        mock_enqueue_api.assert_awaited_once()
+        keywords_arg = mock_enqueue_l.await_args[0][1]
         assert len(keywords_arg) >= 1
         assert "Backend Engineer" in keywords_arg
 
