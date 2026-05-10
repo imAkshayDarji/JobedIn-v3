@@ -261,21 +261,26 @@ async def get_discover_status(
 
     try:
         redis = await arq_create_pool(_get_redis_settings())
-        from arq.jobs import Job as ArqJob
+        from arq.jobs import Job as ArqJob, ResultNotFound
 
-        arq_job = ArqJob(job_id, redis=redis)
+        arq_job = ArqJob(job_id, redis=redis, _queue_name=QUEUE_JOBS)
         info = await arq_job.info()
-        await redis.close()
 
-        if info is None:
-            return JobDiscoverStatusResponse(status="unknown", last_scraped_at=last_scraped)
-
-        if info.result is not None:
-            job_status = "completed"
-        elif info.started is not None:
-            job_status = "running"
+        if info is not None:
+            if info.result is not None:
+                job_status = "completed"
+            elif info.started is not None:
+                job_status = "running"
+            else:
+                job_status = "pending"
         else:
-            job_status = "pending"
+            try:
+                await arq_job.result(timeout=0)
+                job_status = "completed"
+            except (ResultNotFound, TimeoutError):
+                job_status = "unknown"
+
+        await redis.close()
 
     except Exception:
         job_status = "unknown"

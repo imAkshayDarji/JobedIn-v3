@@ -212,8 +212,9 @@ export default function JobsPage() {
         if (status.status === "completed" || status.status === "failed" || status.status === "unknown") {
           if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
           discoverIntervalRef.current = null;
-          setDiscoverStatus(status.status === "completed" ? "completed" : null);
-          if (status.status === "completed") {
+          const succeeded = status.status === "completed" || status.status === "unknown";
+          setDiscoverStatus(succeeded ? "completed" : null);
+          if (succeeded) {
             handleMatchJobs();
             loadJobs(true);
           }
