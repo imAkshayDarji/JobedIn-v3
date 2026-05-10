@@ -220,7 +220,7 @@ class JobDiscoveryService:
         all_raw_jobs: list[dict] = []
         source_errors: list[str] = []
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
             tasks = []
             for source_name in selected:
                 adapter_cls = ADAPTER_REGISTRY[source_name]
