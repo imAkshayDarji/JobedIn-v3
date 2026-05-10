@@ -187,6 +187,12 @@ async def discover_jobs(
         keywords = target_roles
 
     location = request.location or profile.location
+    logger.info(
+        "Discovery request: request.location=%r profile.location=%r resolved=%r",
+        request.location,
+        profile.location,
+        location,
+    )
 
     if not api_sources and not needs_linkedin:
         api_sources = active_api_sources()
