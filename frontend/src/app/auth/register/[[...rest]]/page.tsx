@@ -21,9 +21,9 @@ export default function RegisterPage() {
               card: "rounded-lg shadow-sm ring-1 ring-gray-900/5",
             },
           }}
+          fallbackRedirectUrl="/onboarding"
           signInFallbackRedirectUrl="/dashboard"
           signInUrl="/auth/login"
-          signUpFallbackRedirectUrl="/onboarding"
         />
       </div>
     </div>
