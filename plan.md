@@ -26,7 +26,7 @@
 | Day 20 | Auto-Apply | Apply Frontend | DONE | -- |
 | Day 21 | Polish | Error Handling + Edge Cases | DONE | -- |
 | Day 22 | Polish | Testing | DONE | -- |
-| Day 23 | Polish | Deployment + Documentation | TODO | -- |
+| Day 23 | Polish | Deployment + Documentation | DONE | see git + [docs/DEPLOY.md](docs/DEPLOY.md) |
 
 ### Day 1 Completion Notes
 - FastAPI backend scaffold with health check endpoint
@@ -753,6 +753,13 @@ Step 4: VALIDATE (ATS scoring)
 - Configure Supabase production instance
 - Environment variable documentation
 - Runbook for common issues
+
+### Day 23 Completion Notes
+- **Railway:** Project `satisfied-serenity`; API service `JobedIn-v3` online at `https://jobedin-v3-production.up.railway.app`; `GET /health` returns 200. Postgres and Redis plugins online; worker services documented in [docs/DEPLOY.md](docs/DEPLOY.md).
+- **Vercel:** Project `jobedin-v3-1`; Production deployments Ready (see `vercel ls` from `frontend/`). Root Directory `frontend`; [frontend/vercel.json](frontend/vercel.json) committed for install/build commands.
+- **Supabase:** Not used for primary DB in this repo (Postgres on Railway). [docs/DEPLOY.md](docs/DEPLOY.md) notes future Supabase if introduced.
+- **Environment documentation:** [README.md](README.md) + [.env.example](.env.example) + [docs/DEPLOY.md](docs/DEPLOY.md) checklist for Clerk, CORS, and `NEXT_PUBLIC_API_URL`.
+- **Runbook:** Common failure modes (API, CORS, workers, Clerk) in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ---
 
