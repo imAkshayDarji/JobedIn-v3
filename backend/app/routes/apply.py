@@ -255,7 +255,56 @@ async def apply_single(
 ) -> ApplySingleResponse:
     application = await _validate_application_ownership(session, body.application_id, user.id)
 
-    if application.status != ApplicationStatus.ready:
+    if application.status == ApplicationStatus.saved:
+        job_result = await session.execute(select(Job).where(Job.id == application.job_id))
+        job = job_result.scalar_one_or_none()
+        apply_url = job.apply_url if job else None
+
+        if not apply_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Job has no apply URL. ATS detection cannot be performed.",
+            )
+
+        application.status = ApplicationStatus.generating
+        session.add(application)
+        await session.commit()
+
+        try:
+            redis = await arq_create_pool(_get_redis_settings())
+            await redis.enqueue_job(
+                "ats_detect_job",
+                str(application.id),
+                str(user.id),
+                apply_url,
+                _job_id=f"ats_detect_{application.id}",
+                _queue_name=QUEUE_JOBS,
+            )
+            await redis.close()
+        except Exception as exc:
+            logger.error(f"Failed to enqueue auto ATS detection: {exc}")
+            application.status = ApplicationStatus.saved
+            session.add(application)
+            await session.commit()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to start ATS detection.",
+            )
+
+        for _ in range(90):
+            await asyncio.sleep(2)
+            await session.refresh(application)
+            if application.status in (ApplicationStatus.ready, ApplicationStatus.failed):
+                break
+
+        if application.status != ApplicationStatus.ready:
+            error_msg = application.ats_detection_error or f"ATS detection {application.status.value}"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"ATS detection did not complete successfully: {error_msg}",
+            )
+
+    elif application.status != ApplicationStatus.ready:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Application is in '{application.status.value}' status, expected 'ready'.",
