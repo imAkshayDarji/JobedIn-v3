@@ -66,6 +66,7 @@ class JobListItem(BaseModel):
     created_at: datetime.datetime | None = None
     match_score: float | None = None
     is_saved: bool = False
+    application_id: uuid.UUID | None = None
 
 
 class JobListResponse(BaseModel):
