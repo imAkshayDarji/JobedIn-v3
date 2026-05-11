@@ -52,6 +52,7 @@ export interface ApplyStatusResponse {
   status: string;
   step: string | null;
   error: string | null;
+  notes: string | null;
   resume_id: string | null;
   cover_letter_id: string | null;
   screenshot_path: string | null;
@@ -74,4 +75,6 @@ export interface ApplySSEEvent {
   step: string | null;
   status: string | null;
   error: string | null;
+  notes?: string | null;
+  manual_url?: string | null;
 }

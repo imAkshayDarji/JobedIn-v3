@@ -90,6 +90,8 @@ export interface ApplicationDetail {
   resume_id: string | null;
   cover_letter_id: string | null;
   interview_prep_id: string | null;
+  ats_form_url: string | null;
+  ats_screenshot_path: string | null;
 }
 
 export interface ApplicationStats {

@@ -71,6 +71,8 @@ class ApplicationDetail(BaseModel):
     resume_id: uuid.UUID | None = None
     cover_letter_id: uuid.UUID | None = None
     interview_prep_id: uuid.UUID | None = None
+    ats_form_url: str | None = None
+    ats_screenshot_path: str | None = None
 
 
 class ApplicationStats(BaseModel):

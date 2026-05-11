@@ -19,21 +19,13 @@ export async function saveOnboarding(
 export async function uploadResume(
   file: File,
 ): Promise<ResumeUploadResponse> {
-  const { getAuthHeaders } = await import("@/lib/api");
+  const { authenticatedFetch } = await import("@/lib/api");
 
   const formData = new FormData();
   formData.append("file", file);
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-  const authHeaders = await getAuthHeaders();
-
-  const response = await fetch(`${baseUrl}/api/onboarding/upload-resume`, {
+  const response = await authenticatedFetch("/api/onboarding/upload-resume", {
     method: "POST",
-    headers: {
-      ...authHeaders,
-    },
     body: formData,
   });
 

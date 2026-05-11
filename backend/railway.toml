@@ -5,6 +5,8 @@
 #
 # Arq worker services (job_worker, ai_worker, apply_worker): use
 # `/backend/railway.worker.json` so HTTP healthchecks are disabled (workers do not listen on PORT).
+# AI-only worker image: `Dockerfile.ai` (CMD arq app.workers.ai_worker.WorkerSettings).
+# Apply/job worker image: `Dockerfile.worker` (override CMD per worker).
 # Required on all app/worker services: DATABASE_URL from Postgres (never leave blank);
 # workers also need REDIS_URL and the same start command you use in docker-compose (arq ...).
 #

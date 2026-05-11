@@ -26,7 +26,7 @@ interface ApplyModalProps {
 type ApplyResult =
   | { type: "success" }
   | { type: "issues"; screenshotPath: string | null }
-  | { type: "manual"; manualUrl: string | null }
+  | { type: "manual"; manualUrl: string | null; notes: string | null }
   | { type: "failed"; error: string };
 
 export function ApplyModal({
@@ -81,7 +81,11 @@ export function ApplyModal({
       } else if (status === "applied_with_issues") {
         setResult({ type: "issues", screenshotPath: null });
       } else if (status === "manual_required") {
-        setResult({ type: "manual", manualUrl: null });
+        setResult({
+          type: "manual",
+          manualUrl: event.manual_url ?? null,
+          notes: event.notes ?? null,
+        });
       } else if (status === "failed") {
         setResult({ type: "failed", error: event.error ?? "Application failed" });
       }
@@ -294,13 +298,20 @@ export function ApplyModal({
                   <p className="text-xs text-amber-700 mt-1">
                     This job requires you to apply manually on the employer&apos;s site.
                   </p>
+                  {result.notes && (
+                    <p className="text-xs text-amber-800 mt-2 whitespace-pre-wrap">{result.notes}</p>
+                  )}
                 </div>
               </div>
               <a
                 href={result.manualUrl ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                aria-disabled={!result.manualUrl}
+                onClick={(e) => {
+                  if (!result.manualUrl) e.preventDefault();
+                }}
               >
                 <ExternalLink className="w-3 h-3" />
                 Apply Manually

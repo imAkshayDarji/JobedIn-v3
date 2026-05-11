@@ -20,6 +20,7 @@ class ATSDifficulty(StrEnum):
     easy_apply = "easy_apply"
     multi_step = "multi_step"
     manual_only = "manual_only"
+    manual_assist = "manual_assist"
 
 
 class ATSDetectionResult(BaseModel):
@@ -137,13 +138,16 @@ class ATSDetector:
                         detection_time_ms=elapsed_ms,
                     )
 
+        fields = await self.extract_form_fields(page)
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return ATSDetectionResult(
-            ats_platform=None,
+            ats_platform="generic",
             detection_method="dom_inspection",
             apply_url=url,
-            difficulty=ATSDifficulty.manual_only,
-            confidence=0.5,
+            form_url=page.url,
+            detected_fields=fields,
+            difficulty=ATSDifficulty.manual_assist,
+            confidence=0.55,
             detection_time_ms=elapsed_ms,
         )
 
