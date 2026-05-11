@@ -272,6 +272,8 @@ async def get_application(
         resume_id=resume_id,
         cover_letter_id=cover_letter_id,
         interview_prep_id=interview_prep_id,
+        ats_form_url=application.ats_form_url,
+        ats_screenshot_path=application.ats_screenshot_path,
     )
 
 

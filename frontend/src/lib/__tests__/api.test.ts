@@ -43,6 +43,7 @@ describe("getAuthHeaders", () => {
 
 describe("handleResponse (via api.get)", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     stubWindowClerk();
   });
 
@@ -56,17 +57,43 @@ describe("handleResponse (via api.get)", () => {
     expect(result).toEqual(data);
   });
 
-  it("throws with Unauthorized on 401", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ detail: "Invalid token" }), {
-        status: 401,
-        statusText: "Unauthorized",
-      }),
-    );
+  it("throws with Unauthorized when 401 persists after token refresh retry", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Invalid token" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Invalid token" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+      );
 
     await expect(api.get("/test")).rejects.toEqual(
       expect.objectContaining({ status: 401 }),
     );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once and succeeds when second response is 200", async () => {
+    const data = { recovered: true };
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Token expired" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(data), { status: 200, statusText: "OK" }),
+      );
+
+    const result = await api.get("/test");
+    expect(result).toEqual(data);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("throws with rate limit info on 429", async () => {
@@ -98,6 +125,7 @@ describe("handleResponse (via api.get)", () => {
 
 describe("api.get", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     stubWindowClerk();
   });
 
@@ -125,6 +153,7 @@ describe("api.get", () => {
 
 describe("api.post", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     stubWindowClerk();
   });
 

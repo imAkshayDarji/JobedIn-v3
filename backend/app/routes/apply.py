@@ -93,11 +93,11 @@ async def detect_ats(
             detail="Job not found.",
         )
 
-    apply_url = request.apply_url or job.apply_url
-    if not apply_url:
+    apply_url_passed = (request.apply_url or job.apply_url or "").strip()
+    if not apply_url_passed and not (job.source_url or "").strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Job has no apply URL.",
+            detail="Job has no apply URL or source URL to resolve from.",
         )
 
     app_result = await session.execute(
@@ -129,7 +129,7 @@ async def detect_ats(
             "ats_detect_job",
             str(application.id),
             str(user.id),
-            apply_url,
+            apply_url_passed,
             _job_id=f"ats_detect_{application.id}",
             _queue_name=QUEUE_JOBS,
         )
@@ -150,7 +150,7 @@ async def detect_ats(
             "application_id": str(application.id),
             "user_id": str(user.id),
             "job_id": str(request.job_id),
-            "apply_url": apply_url,
+            "apply_url": apply_url_passed or None,
         },
     )
 
@@ -258,12 +258,12 @@ async def apply_single(
     if application.status == ApplicationStatus.saved:
         job_result = await session.execute(select(Job).where(Job.id == application.job_id))
         job = job_result.scalar_one_or_none()
-        apply_url = job.apply_url if job else None
-
-        if not apply_url:
+        apply_url_job = ((job.apply_url or "").strip()) if job else ""
+        has_source_url = bool(job and (job.source_url or "").strip())
+        if not apply_url_job and not has_source_url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Job has no apply URL. ATS detection cannot be performed.",
+                detail="Job has no apply URL or listing URL for resolution.",
             )
 
         application.status = ApplicationStatus.generating
@@ -276,7 +276,7 @@ async def apply_single(
                 "ats_detect_job",
                 str(application.id),
                 str(user.id),
-                apply_url,
+                apply_url_job,
                 _job_id=f"ats_detect_{application.id}",
                 _queue_name=QUEUE_JOBS,
             )
@@ -292,10 +292,24 @@ async def apply_single(
             )
 
         for _ in range(90):
+
             await asyncio.sleep(2)
+
             await session.refresh(application)
-            if application.status in (ApplicationStatus.ready, ApplicationStatus.failed):
+
+            if application.status in (
+                ApplicationStatus.ready,
+                ApplicationStatus.failed,
+                ApplicationStatus.manual_required,
+            ):
                 break
+
+        if application.status == ApplicationStatus.manual_required:
+            return ApplySingleResponse(
+                application_id=application.id,
+                task_id="",
+                message=application.notes or "Manual completion is required before auto-apply can run.",
+            )
 
         if application.status != ApplicationStatus.ready:
             error_msg = application.ats_detection_error or f"ATS detection {application.status.value}"
@@ -476,6 +490,7 @@ async def apply_status(
         status=application.status.value if isinstance(application.status, ApplicationStatus) else str(application.status),
         step=step,
         error=error,
+        notes=application.notes,
         resume_id=resume_id,
         cover_letter_id=cover_letter_id,
         screenshot_path=application.ats_screenshot_path,
@@ -503,6 +518,7 @@ async def apply_stream(
                 current_step = None
                 current_status = None
                 current_error = None
+                current_notes = None
 
                 if progress_raw:
                     try:
@@ -519,6 +535,7 @@ async def apply_stream(
                     if app:
                         current_status = app.status.value if isinstance(app.status, ApplicationStatus) else str(app.status)
                         current_error = app.ats_detection_error
+                        current_notes = app.notes
 
                 if current_step != last_step or current_status != last_status:
                     event_data = json.dumps({
@@ -527,6 +544,8 @@ async def apply_stream(
                         "step": current_step,
                         "status": current_status,
                         "error": current_error,
+                        "notes": current_notes,
+                        "manual_url": app.ats_form_url if app else None,
                     })
                     yield f"data: {event_data}\n\n"
                     last_step = current_step
@@ -537,6 +556,8 @@ async def apply_stream(
                         "event": "done",
                         "application_id": str(application_id),
                         "status": current_status,
+                        "notes": app.notes if app else None,
+                        "manual_url": app.ats_form_url if app else None,
                     })
                     yield f"data: {done_data}\n\n"
                     break

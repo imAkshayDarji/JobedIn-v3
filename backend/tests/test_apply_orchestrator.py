@@ -37,7 +37,7 @@ def _make_application(
 ) -> MagicMock:
     app = MagicMock()
     app.id = app_id
-    app.user_id = user_id
+    app.user_id = str(user_id)
     app.job_id = job_id
     app.status = status
     app.ats_platform = ats_platform
@@ -464,7 +464,7 @@ class TestEnqueueFailsRevertsStatus:
         from app.routes.apply import apply_single
         from app.schemas.apply import ApplySingleRequest
 
-        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
+        user = CurrentUser(id=str(TEST_USER_ID), email="test@example.com")
         application = _make_application(status=ApplicationStatus.ready)
 
         mock_session = AsyncMock()
