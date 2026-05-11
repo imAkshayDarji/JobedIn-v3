@@ -154,6 +154,9 @@ class AutoApplyOrchestrator:
                 "ats_screenshot_path": screenshot_path,
                 "ats_form_url": manual_url,
             }
+            notes_val = apply_result.get("notes")
+            if isinstance(notes_val, str) and notes_val.strip():
+                status_kwargs["notes"] = notes_val.strip()
             if final_status == ApplicationStatus.applied:
                 status_kwargs["applied_at"] = datetime.now(timezone.utc)
 
@@ -430,6 +433,125 @@ class AutoApplyOrchestrator:
             )
             return result.scalar_one_or_none()
 
+    async def _generic_form_apply(
+        self,
+        application_id: uuid.UUID,
+        job: Any,
+        profile: Any,
+        resume_path: str,
+        application: Any,
+    ) -> dict[str, Any]:
+        from app.services.generic_form_detector import GenericFormDetector
+
+        apply_url_use = (
+            (application.ats_form_url or job.apply_url or job.source_url or "") or ""
+        ).strip()
+
+        if not apply_url_use:
+            return {
+                "status": ApplicationStatus.manual_required,
+                "manual_url": None,
+                "notes": "No career or application URL is available for this job.",
+            }
+
+        page = await self._browser.new_page()
+
+        try:
+            resp = await self._browser.safe_goto(page, apply_url_use)
+
+            if resp is None:
+                return {
+                    "status": ApplicationStatus.manual_required,
+                    "manual_url": apply_url_use,
+                    "notes": "Could not open the application page in automation.",
+                }
+
+            await self._record_step(application_id, "filling_form")
+            detector = GenericFormDetector(self._browser)
+
+            fields = await detector.detect_fields(page)
+
+            fill_result = await detector.fill_fields(
+                page,
+                profile,
+                fields,
+                resume_path,
+                f"generic_apply_{application_id}",
+            )
+
+            has_mappable = any(f.mapped_to for f in fields)
+
+            if not fields:
+
+                return {
+                    "status": ApplicationStatus.manual_required,
+                    "screenshot_path": fill_result.screenshot_path,
+                    "manual_url": apply_url_use,
+                    "notes": "No HTML form found on this page. Apply manually on the employer site.",
+                }
+
+            if not fill_result.filled_fields and not has_mappable:
+
+                return {
+                    "status": ApplicationStatus.manual_required,
+                    "screenshot_path": fill_result.screenshot_path,
+                    "manual_url": apply_url_use,
+                    "notes": "Could not match form fields to your profile. Complete the form manually.",
+                }
+
+            if fill_result.unfilled_required:
+
+                txt = ", ".join(fill_result.unfilled_required)
+
+                return {
+                    "status": ApplicationStatus.manual_required,
+                    "screenshot_path": fill_result.screenshot_path,
+                    "manual_url": apply_url_use,
+                    "notes": f"Remaining required fields need manual input: {txt}",
+                }
+
+            await self._record_step(application_id, "submitting")
+
+            submitted = await detector.try_submit(page)
+
+            shot = await self._browser.capture_screenshot(page, f"generic_submit_{application_id}")
+
+            if not submitted:
+
+                return {
+                    "status": ApplicationStatus.manual_required,
+                    "screenshot_path": shot or fill_result.screenshot_path,
+                    "manual_url": apply_url_use,
+                    "notes": (
+                        "Partially filled application form. Review and submit manually "
+                        "(auto-submit button not found)."
+                    ),
+                }
+
+            return {
+                "status": ApplicationStatus.applied_with_issues,
+                "screenshot_path": shot,
+                "manual_url": apply_url_use,
+                "notes": "Submitted via generic form assist; confirm submission in the employer portal.",
+            }
+
+        except Exception as exc:
+
+            logger.error(
+                f"Generic form apply failed for application {application_id}: {exc}",
+                exc_info=True,
+            )
+
+            return {
+                "status": ApplicationStatus.manual_required,
+                "manual_url": apply_url_use,
+                "notes": f"Generic form automation error: {exc}",
+            }
+
+        finally:
+
+            await self._browser.close_page(page)
+
     async def _attempt_ats_apply(
         self,
         application_id: uuid.UUID,
@@ -442,106 +564,195 @@ class AutoApplyOrchestrator:
         from app.services.ats_fillers.registry import ATSFillerRegistry
 
         async with await self._session_factory() as session:
+
             result = await session.execute(
+
                 select(Application).where(Application.id == application_id)
+
             )
+
             application = result.scalar_one_or_none()
 
+
             if application is None:
+
+
                 return {
+
                     "status": ApplicationStatus.failed,
+
                     "error": "Application not found",
+
                 }
+
 
         ats_platform = application.ats_platform
 
+
         if not ats_platform:
+
             logger.info(
+
                 "no_ats_platform_manual_required",
+
                 extra={"application_id": str(application_id)},
+
             )
+
+            manual = application.ats_form_url or job.apply_url or job.source_url
+
             return {
+
                 "status": ApplicationStatus.manual_required,
-                "manual_url": job.apply_url,
+
+                "manual_url": manual,
+
             }
+
+
+        if ats_platform == "generic":
+
+            return await self._generic_form_apply(application_id, job, profile, resume_path, application)
+
 
         registry = ATSFillerRegistry(self._browser)
+
         filler = registry.get_filler(ats_platform)
 
+
         if filler is None:
+
             logger.info(
+
                 "unsupported_ats_platform",
+
                 extra={"application_id": str(application_id), "ats_platform": ats_platform},
+
             )
+
             return {
+
                 "status": ApplicationStatus.manual_required,
-                "manual_url": job.apply_url,
+
+                "manual_url": application.ats_form_url or job.apply_url or job.source_url,
+
             }
+
 
         apply_url = application.ats_form_url or job.apply_url or ""
+
         if not apply_url:
+
             return {
+
                 "status": ApplicationStatus.manual_required,
-                "manual_url": None,
+
+                "manual_url": application.ats_form_url or job.source_url,
+
             }
 
+
         try:
+
             page = await self._browser.new_page()
+
             try:
+
                 await self._browser.safe_goto(page, apply_url)
 
+
                 await self._record_step(application_id, "filling_form")
+
                 await filler.fill(page, profile, resume_path=resume_path)
 
+
                 await self._record_step(application_id, "submitting")
+
                 submitted = await filler.submit(page)
 
+
                 if not submitted:
+
                     screenshot_path = await self._browser.capture_screenshot(page, f"submit_failed_{application_id}")
+
                     return {
+
                         "status": ApplicationStatus.manual_required,
+
                         "screenshot_path": screenshot_path,
+
                         "manual_url": apply_url,
+
                     }
 
+
                 await self._record_step(application_id, "verifying")
+
                 verify_result = await filler.verify(page)
+
 
                 screenshot_path = await self._browser.capture_screenshot(page, f"apply_{application_id}")
 
+
                 if verify_result.success:
+
                     return {
+
                         "status": ApplicationStatus.applied,
+
                         "screenshot_path": verify_result.screenshot_path or screenshot_path,
+
                     }
-                else:
-                    return {
-                        "status": ApplicationStatus.applied_with_issues,
-                        "screenshot_path": verify_result.screenshot_path or screenshot_path,
-                        "manual_url": apply_url,
-                    }
+
+                return {
+
+                    "status": ApplicationStatus.applied_with_issues,
+
+                    "screenshot_path": verify_result.screenshot_path or screenshot_path,
+
+                    "manual_url": apply_url,
+
+                }
+
 
             except ATSCAPTCHAError:
+
                 screenshot_path = await self._browser.capture_screenshot(page, f"captcha_{application_id}")
+
                 return {
+
                     "status": ApplicationStatus.manual_required,
+
                     "screenshot_path": screenshot_path,
+
                     "manual_url": apply_url,
+
                 }
+
             finally:
+
                 await self._browser.close_page(page)
 
-        except Exception as exc:
-            logger.error(
-                f"ATS apply failed for application {application_id}: {exc}",
-                exc_info=True,
-            )
-            return {
-                "status": ApplicationStatus.manual_required,
-                "manual_url": job.apply_url,
-                "error": str(exc),
-            }
 
+        except Exception as exc:
+
+            logger.error(
+
+                f"ATS apply failed for application {application_id}: {exc}",
+
+                exc_info=True,
+
+            )
+
+            return {
+
+                "status": ApplicationStatus.manual_required,
+
+                "manual_url": application.ats_form_url or job.apply_url or job.source_url,
+
+                "error": str(exc),
+
+            }
     async def _update_status(self, application_id: uuid.UUID, status: ApplicationStatus, **kwargs: Any) -> None:
         from app.models.application import Application
 

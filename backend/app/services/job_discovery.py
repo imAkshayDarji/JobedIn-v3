@@ -100,6 +100,7 @@ class JobDiscoveryService:
                         "salary_currency": insert_stmt.excluded.salary_currency,
                         "job_type": insert_stmt.excluded.job_type,
                         "remote_policy": insert_stmt.excluded.remote_policy,
+                        "apply_url": insert_stmt.excluded.apply_url,
                         "source_url": insert_stmt.excluded.source_url,
                         "scraped_at": insert_stmt.excluded.scraped_at,
                         "alternate_sources": insert_stmt.excluded.alternate_sources,
@@ -287,7 +288,9 @@ class JobDiscoveryService:
         if not title or not company:
             return None
 
-        source_url = raw.get("source_url", "")
+        source_url = (raw.get("source_url") or "").strip() or None
+        raw_apply = (raw.get("apply_url") or "").strip() or None
+        apply_url = raw_apply or source_url
         external_id = raw.get("external_id")
 
         if not external_id and source == JobSource.linkedin:
@@ -308,7 +311,8 @@ class JobDiscoveryService:
 
         normalized: dict = {
             "source": source,
-            "source_url": source_url or None,
+            "source_url": source_url,
+            "apply_url": apply_url,
             "external_id": external_id,
             "title": title.title(),
             "company": company,

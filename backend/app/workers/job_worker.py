@@ -207,6 +207,7 @@ async def ats_detect_job(
     from app.database import async_session_factory
     from app.models.application import Application
     from app.models.base import ApplicationStatus
+    from app.models.job import Job
     from app.services.ats_detector import ATSDetector
     from app.services.browser_service import BrowserService
 
@@ -231,18 +232,52 @@ async def ats_detect_job(
             return {"status": "skipped", "reason": "user_mismatch"}
 
         try:
+            job_result = await session.execute(select(Job).where(Job.id == application.job_id))
+            job = job_result.scalar_one_or_none()
+            if job is None:
+                application.ats_detection_error = "Job row missing"
+                application.status = ApplicationStatus.saved
+                session.add(application)
+                await session.commit()
+                return {"status": "failed", "error": "job_not_found"}
+
+            apply_candidate = (apply_url or "").strip()
+
             async with BrowserService(
                 headless=settings.ATS_DETECT_HEADLESS,
                 timeout_ms=settings.ATS_DETECT_TIMEOUT_MS,
                 screenshot_dir=settings.ATS_SCREENSHOT_DIR,
             ) as browser:
+                if not apply_candidate:
+                    from app.services.url_resolver import URLResolver
+
+                    resolver = URLResolver(browser)
+                    resolved = await resolver.resolve(job)
+                    apply_candidate = (resolved.apply_url or "").strip()
+                    if not apply_candidate:
+                        application.status = ApplicationStatus.manual_required
+                        application.ats_platform = None
+                        application.ats_detection_method = "failed"
+                        application.ats_confidence = 0.0
+                        application.ats_form_url = job.source_url or job.apply_url
+                        application.notes = resolved.error or "Could not resolve an apply URL automatically."
+                        application.ats_detection_error = None
+                        application.ats_difficulty = None
+                        session.add(application)
+                        await session.commit()
+                        logger.info(
+                            "ats_detect_url_unresolved",
+                            extra={"application_id": application_id},
+                        )
+                        return {"status": "manual_required", "reason": "url_resolution_failed"}
+
                 detector = ATSDetector(browser)
-                result = await detector.detect(apply_url)
+                result = await detector.detect(apply_candidate)
 
             application.ats_platform = result.ats_platform
             application.ats_detection_method = result.detection_method
             application.ats_confidence = result.confidence
-            application.ats_form_url = result.form_url
+            application.ats_form_url = result.form_url or apply_candidate
             application.ats_detected_fields = result.detected_fields
             application.ats_screenshot_path = result.screenshot_path
             application.ats_detection_error = result.error

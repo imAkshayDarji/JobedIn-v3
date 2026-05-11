@@ -8,6 +8,7 @@ class ATSDifficultyEnum(StrEnum):
     easy_apply = "easy_apply"
     multi_step = "multi_step"
     manual_only = "manual_only"
+    manual_assist = "manual_assist"
 
 
 class ATSDetectRequest(BaseModel):
@@ -60,6 +61,7 @@ class ApplyStatusResponse(BaseModel):
     status: str
     step: str | None = None
     error: str | None = None
+    notes: str | None = None
     resume_id: uuid.UUID | None = None
     cover_letter_id: uuid.UUID | None = None
     screenshot_path: str | None = None
@@ -95,3 +97,5 @@ class ApplySSEEvent(BaseModel):
     step: str | None = None
     status: str | None = None
     error: str | None = None
+    notes: str | None = None
+    manual_url: str | None = None

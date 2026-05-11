@@ -314,28 +314,31 @@ async def test_generate_interview_prep_job_failure():
 
 
 @pytest.mark.asyncio
-async def test_sweep_stale_jobs_calls_hscan():
-    """sweep_stale_jobs has a while-True hscan loop with no break —
-    the DB sweep after the loop is currently unreachable dead code.
-    Verify the hscan is called correctly."""
+async def test_sweep_stale_jobs_completes_hscan_and_runs_db_sweep():
+    """HSCAN terminates when cursor returns 0; DB stale-status update runs."""
     redis = AsyncMock()
-
-    class _BreakLoop(Exception):
-        pass
-
-    redis.hscan = AsyncMock(side_effect=_BreakLoop())
+    redis.hscan = AsyncMock(return_value=(0, {}))
     redis.hget = AsyncMock(return_value=None)
 
     session = AsyncMock()
+    exec_result = MagicMock()
+    scalars_result = MagicMock()
+    scalars_result.all.return_value = []
+    exec_result.scalars.return_value = scalars_result
+    session.execute = AsyncMock(return_value=exec_result)
+    session.commit = AsyncMock()
+
     session_factory = _AsyncSessionMock(session)
     ctx = {"redis": redis}
 
     with patch("app.database.async_session_factory", session_factory):
         from app.workers.ai_worker import sweep_stale_jobs
-        with pytest.raises(_BreakLoop):
-            await sweep_stale_jobs(ctx)
+
+        await sweep_stale_jobs(ctx)
 
     redis.hscan.assert_awaited_once()
+    assert session.execute.await_count == 3
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

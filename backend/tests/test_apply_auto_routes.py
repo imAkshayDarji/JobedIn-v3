@@ -54,19 +54,18 @@ class TestApplySingleSuccess:
         from app.auth import CurrentUser
         from app.routes.apply import apply_single
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.ready,
             ats_platform="greenhouse",
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
         mock_arq_pool = AsyncMock()
@@ -89,18 +88,17 @@ class TestApplySingleNotReady:
         from app.auth import CurrentUser
         from app.routes.apply import apply_single
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=uuid.uuid4(),
-            status=ApplicationStatus.saved,
+            status=ApplicationStatus.generating,
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
         from fastapi import HTTPException
@@ -116,19 +114,17 @@ class TestApplySingleNotOwned:
         from app.auth import CurrentUser
         from app.routes.apply import apply_single
 
-        other_user_id = uuid.UUID(OTHER_USER_ID)
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=other_user_id,
+            user_id=OTHER_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.ready,
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
         from fastapi import HTTPException
@@ -144,11 +140,10 @@ class TestApplySingleNotFound:
         from app.auth import CurrentUser
         from app.routes.apply import apply_single
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         mock_session = _make_mock_session([None])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
         from fastapi import HTTPException
@@ -164,18 +159,17 @@ class TestApplySingleEnqueueFails:
         from app.auth import CurrentUser
         from app.routes.apply import apply_single
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.ready,
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
         with patch("app.routes.apply.arq_create_pool", side_effect=Exception("ARQ down")):
@@ -194,16 +188,15 @@ class TestApplyBulkSuccess:
         from app.auth import CurrentUser
         from app.routes.apply import apply_bulk
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_ids = [uuid.uuid4(), uuid.uuid4()]
 
         applications = [
-            Application(id=aid, user_id=user_id, job_id=uuid.uuid4(), status=ApplicationStatus.ready)
+            Application(id=aid, user_id=TEST_USER_ID, job_id=uuid.uuid4(), status=ApplicationStatus.ready)
             for aid in app_ids
         ]
 
         mock_session = _make_mock_session(applications)
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplyBulkRequest(application_ids=app_ids)
 
         mock_arq_pool = AsyncMock()
@@ -241,12 +234,11 @@ class TestApplyBulkMixedStatus:
         from app.auth import CurrentUser
         from app.routes.apply import apply_bulk
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id1 = uuid.uuid4()
         app_id2 = uuid.uuid4()
 
-        app1 = Application(id=app_id1, user_id=user_id, job_id=uuid.uuid4(), status=ApplicationStatus.ready)
-        app2 = Application(id=app_id2, user_id=user_id, job_id=uuid.uuid4(), status=ApplicationStatus.saved)
+        app1 = Application(id=app_id1, user_id=TEST_USER_ID, job_id=uuid.uuid4(), status=ApplicationStatus.ready)
+        app2 = Application(id=app_id2, user_id=TEST_USER_ID, job_id=uuid.uuid4(), status=ApplicationStatus.saved)
 
         result1 = MagicMock()
         result1.scalar_one_or_none.return_value = app1
@@ -255,7 +247,7 @@ class TestApplyBulkMixedStatus:
 
         mock_session = AsyncMock()
         mock_session.execute.side_effect = [result1, result2]
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplyBulkRequest(application_ids=[app_id1, app_id2])
 
         from fastapi import HTTPException
@@ -271,19 +263,18 @@ class TestApplyStatusSuccess:
         from app.auth import CurrentUser
         from app.routes.apply import apply_status
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.applying,
             ats_platform="greenhouse",
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
@@ -302,19 +293,17 @@ class TestApplyStatusNotOwned:
         from app.auth import CurrentUser
         from app.routes.apply import apply_status
 
-        other_user_id = uuid.UUID(OTHER_USER_ID)
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=other_user_id,
+            user_id=OTHER_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.applying,
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         from fastapi import HTTPException
 
@@ -329,7 +318,7 @@ class TestApplyBulkStatus:
         from app.auth import CurrentUser
         from app.routes.apply import apply_bulk_status
 
-        user = CurrentUser(id=uuid.UUID(TEST_USER_ID), email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         bulk_data = json.dumps({
             "total": 3,
@@ -362,7 +351,7 @@ class TestApplyBulkStatusInitial:
         from app.auth import CurrentUser
         from app.routes.apply import apply_bulk_status
 
-        user = CurrentUser(id=uuid.UUID(TEST_USER_ID), email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         bulk_data = json.dumps({
             "total": 5,
