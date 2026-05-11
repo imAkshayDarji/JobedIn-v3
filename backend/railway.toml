@@ -3,13 +3,15 @@
 # Dashboard: Root Directory `backend`, Config as Code path `/backend/railway.toml`
 # (path is from repo root; it does not follow Root Directory).
 #
-# Worker services (each sets its own Config as Code file in the Railway UI):
-# - Job worker (ATS detection, LinkedIn, QUEUE_JOBS): `/backend/railway.worker.json`
-#   → Dockerfile.worker, default CMD = JobWorkerSettings.
-# - Apply worker (QUEUE_APPLY): `/backend/railway.apply-worker.json`
-#   → same Dockerfile.worker, startCommand = ApplyWorkerSettings.
-# - AI worker (resume/cover/interview, QUEUE_AI): Dockerfile.ai + worker-style deploy;
-#   use `/backend/railway.worker.json` only for healthcheck=null pattern, or set Dockerfile.ai in UI.
+# Worker services (Railway UI per service):
+# - Config file: `/backend/railway.worker.json` (healthcheck disabled, restart policy).
+# - Required variable: RAILWAY_DOCKERFILE_PATH=/backend/Dockerfile.worker so the Docker build
+#   uses the worker image (Playwright Chromium). Without this, Railway may build `/backend/Dockerfile`
+#   (API image) while still running arq — Chromium will be missing at runtime.
+# - Job worker (QUEUE_JOBS): startCommand arq app.workers.job_worker.JobWorkerSettings (Dockerfile CMD default).
+# - Apply worker (QUEUE_APPLY): `/backend/railway.apply-worker.json` documents startCommand
+#   arq app.workers.apply_worker.ApplyWorkerSettings — deploy as its own service with the same Dockerfile.worker path.
+# - AI worker (QUEUE_AI): Dockerfile.ai; set RAILWAY_DOCKERFILE_PATH=/backend/Dockerfile.ai when needed.
 # Required on all app/worker services: DATABASE_URL from Postgres (never leave blank);
 # workers also need REDIS_URL and the same start command you use in docker-compose (arq ...).
 #
