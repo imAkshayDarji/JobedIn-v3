@@ -11,11 +11,16 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends fonts-liberation fonts-noto-color-emoji && \
     rm -rf /var/lib/apt/lists/*
 
-RUN playwright install chromium --with-deps || playwright install chromium
-
-RUN mkdir -p /app/screenshots /app/resumes && chown -R appuser:appuser /app
+# Install browsers into a shared path. Root-layer `playwright install` defaults to /root/.cache;
+# runtime uses USER appuser (HOME=/app) which expects /app/.cache — Chromium was missing at runtime.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN mkdir -p /opt/ms-playwright && \
+    playwright install chromium --with-deps || playwright install chromium
 
 COPY . .
+
+RUN mkdir -p /app/screenshots /app/resumes && \
+    chown -R appuser:appuser /app /opt/ms-playwright
 
 USER appuser
 

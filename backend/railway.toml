@@ -3,10 +3,13 @@
 # Dashboard: Root Directory `backend`, Config as Code path `/backend/railway.toml`
 # (path is from repo root; it does not follow Root Directory).
 #
-# Arq worker services (job_worker, ai_worker, apply_worker): use
-# `/backend/railway.worker.json` so HTTP healthchecks are disabled (workers do not listen on PORT).
-# AI-only worker image: `Dockerfile.ai` (CMD arq app.workers.ai_worker.WorkerSettings).
-# Apply/job worker image: `Dockerfile.worker` (override CMD per worker).
+# Worker services (each sets its own Config as Code file in the Railway UI):
+# - Job worker (ATS detection, LinkedIn, QUEUE_JOBS): `/backend/railway.worker.json`
+#   → Dockerfile.worker, default CMD = JobWorkerSettings.
+# - Apply worker (QUEUE_APPLY): `/backend/railway.apply-worker.json`
+#   → same Dockerfile.worker, startCommand = ApplyWorkerSettings.
+# - AI worker (resume/cover/interview, QUEUE_AI): Dockerfile.ai + worker-style deploy;
+#   use `/backend/railway.worker.json` only for healthcheck=null pattern, or set Dockerfile.ai in UI.
 # Required on all app/worker services: DATABASE_URL from Postgres (never leave blank);
 # workers also need REDIS_URL and the same start command you use in docker-compose (arq ...).
 #
@@ -14,6 +17,7 @@
 
 [build]
 builder = "DOCKERFILE"
+dockerfilePath = "/backend/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
