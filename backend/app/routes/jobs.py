@@ -448,7 +448,7 @@ async def list_jobs(
         and_(JobMatch.job_id == Job.id, JobMatch.user_id == user.id),
     ).outerjoin(
         Application,
-        and_(Application.job_id == Job.id, Application.user_id == user.id, Application.status == ApplicationStatus.saved),
+        and_(Application.job_id == Job.id, Application.user_id == user.id),
     )
     if clauses:
         stmt = stmt.where(and_(*clauses))
@@ -491,6 +491,7 @@ async def list_jobs(
                 created_at=job.created_at,
                 match_score=match_score,
                 is_saved=app_id is not None,
+                application_id=app_id,
             )
             for job, match_score, app_id in rows
         ],
@@ -753,11 +754,9 @@ async def save_job(
             Application.job_id == job_id,
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Job already saved.",
-        )
+    existing_app = existing.scalar_one_or_none()
+    if existing_app:
+        return {"message": "Job already saved", "application_id": str(existing_app.id)}
 
     application = Application(
         user_id=user.id,
@@ -791,7 +790,7 @@ async def save_job(
         extra={"user_id": str(user.id), "job_id": str(job_id)},
     )
 
-    return {"message": "Job saved"}
+    return {"message": "Job saved", "application_id": str(application.id)}
 
 
 @router.delete("/{job_id}/save", status_code=status.HTTP_200_OK)
