@@ -297,7 +297,7 @@ async def sweep_stale_jobs(ctx: dict[str, Any]) -> None:
     from sqlalchemy import select
 
     redis = ctx["redis"]
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+    cutoff = datetime.utcnow() - timedelta(minutes=10)
 
     import json
 
