@@ -6,6 +6,7 @@
   },
   "deploy": {
     "healthcheckPath": null,
-    "restartPolicyType": "ON_FAILURE"
+    "restartPolicyType": "ON_FAILURE",
+    "startCommand": "arq app.workers.apply_worker.ApplyWorkerSettings"
   }
 }
