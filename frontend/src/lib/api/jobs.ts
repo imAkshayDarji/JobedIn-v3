@@ -77,8 +77,8 @@ export async function listSavedJobs(
   );
 }
 
-export async function saveJob(jobId: string): Promise<void> {
-  await api.post(`/api/jobs/${jobId}/save`);
+export async function saveJob(jobId: string): Promise<{ message: string; application_id?: string }> {
+  return api.post<{ message: string; application_id?: string }>(`/api/jobs/${jobId}/save`, {});
 }
 
 export async function unsaveJob(jobId: string): Promise<void> {

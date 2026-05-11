@@ -30,6 +30,7 @@ export interface JobListItem {
   created_at: string | null;
   match_score: number | null;
   is_saved: boolean;
+  application_id: string | null;
 }
 
 export interface JobListResponse {

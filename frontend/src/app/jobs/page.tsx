@@ -43,7 +43,7 @@ export default function JobsPage() {
   const [sourceStatuses, setSourceStatuses] = useState<SourceStatus[]>([]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [applyModalJobId, setApplyModalJobId] = useState<string | null>(null);
+  const [applyModalApplicationId, setApplyModalApplicationId] = useState<string | null>(null);
   const [applyModalJobTitle, setApplyModalJobTitle] = useState("");
   const [applyModalCompany, setApplyModalCompany] = useState("");
   const [applyingId, setApplyingId] = useState<string | null>(null);
@@ -269,17 +269,23 @@ export default function JobsPage() {
 
     setApplyingId(jobId);
 
-    if (!job.is_saved) {
+    let applicationId = job.application_id;
+
+    if (!applicationId) {
       try {
-        await saveJob(jobId);
-        loadJobs(true);
+        const result = await saveJob(jobId);
+        applicationId = result.application_id ?? null;
       } catch {
-        // May already be saved
+        // Ignore — will fail gracefully below
       }
     }
 
-    // After saving, show apply modal
-    setApplyModalJobId(jobId);
+    if (!applicationId) {
+      setApplyingId(null);
+      return;
+    }
+
+    setApplyModalApplicationId(applicationId);
     setApplyModalJobTitle(job.title);
     setApplyModalCompany(job.company);
     setApplyingId(null);
@@ -477,18 +483,18 @@ export default function JobsPage() {
         />
       )}
 
-      {applyModalJobId && (
+      {applyModalApplicationId && (
         <ApplyModal
-          applicationId={applyModalJobId}
+          applicationId={applyModalApplicationId}
           jobTitle={applyModalJobTitle}
           companyName={applyModalCompany}
           onClose={() => {
-            setApplyModalJobId(null);
+            setApplyModalApplicationId(null);
             setApplyModalJobTitle("");
             setApplyModalCompany("");
           }}
           onCompleted={() => {
-            setApplyModalJobId(null);
+            setApplyModalApplicationId(null);
             setApplyModalJobTitle("");
             setApplyModalCompany("");
             loadJobs(true);
