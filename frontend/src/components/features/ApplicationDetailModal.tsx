@@ -100,6 +100,7 @@ export function ApplicationDetailModal({
   }
 
   const { job } = application;
+  const careerPageUrl = application.ats_form_url ?? job.source_url;
 
   return (
     <>
@@ -193,9 +194,9 @@ export function ApplicationDetailModal({
                   Auto Apply
                 </button>
               )}
-              {application.status === "manual_required" && job.source_url && (
+              {application.status === "manual_required" && careerPageUrl && (
                 <a
-                  href={job.source_url}
+                  href={careerPageUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition-colors"

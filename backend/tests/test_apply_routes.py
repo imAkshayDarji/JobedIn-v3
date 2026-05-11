@@ -40,7 +40,7 @@ class TestGetDetectionStatus:
         from app.routes.apply import get_detection_status
 
         mock_session = _make_mock_session([None])
-        user = CurrentUser(id=uuid.UUID(TEST_USER_ID), email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         from fastapi import HTTPException
 
@@ -55,13 +55,13 @@ class TestGetDetectionStatus:
 
         other_user_app = Application(
             id=uuid.uuid4(),
-            user_id=uuid.uuid4(),
+            user_id=str(uuid.uuid4()),
             job_id=uuid.uuid4(),
             status=ApplicationStatus.ready,
         )
 
         mock_session = _make_mock_session([other_user_app])
-        user = CurrentUser(id=uuid.UUID(TEST_USER_ID), email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         from fastapi import HTTPException
 
@@ -74,13 +74,12 @@ class TestGetDetectionStatus:
         from app.auth import CurrentUser
         from app.routes.apply import get_detection_status
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
         job_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=job_id,
             status=ApplicationStatus.ready,
             ats_platform="greenhouse",
@@ -90,7 +89,7 @@ class TestGetDetectionStatus:
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         response = await get_detection_status(app_id, user, mock_session)
 
         assert response.application_id == app_id
@@ -105,7 +104,7 @@ class TestScreenshot:
         from app.routes.apply import get_detection_screenshot
 
         mock_session = _make_mock_session([None])
-        user = CurrentUser(id=uuid.UUID(TEST_USER_ID), email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         from fastapi import HTTPException
 
@@ -118,19 +117,18 @@ class TestScreenshot:
         from app.auth import CurrentUser
         from app.routes.apply import get_detection_screenshot
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.ready,
             ats_screenshot_path="/etc/passwd",
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         from fastapi import HTTPException
 
@@ -143,18 +141,17 @@ class TestScreenshot:
         from app.auth import CurrentUser
         from app.routes.apply import get_detection_screenshot
 
-        user_id = uuid.UUID(TEST_USER_ID)
         app_id = uuid.uuid4()
 
         application = Application(
             id=app_id,
-            user_id=user_id,
+            user_id=TEST_USER_ID,
             job_id=uuid.uuid4(),
             status=ApplicationStatus.ready,
         )
 
         mock_session = _make_mock_session([application])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
 
         from fastapi import HTTPException
 
@@ -170,7 +167,6 @@ class TestDetect:
         from app.models.job import Job
         from app.routes.apply import detect_ats
 
-        user_id = uuid.UUID(TEST_USER_ID)
         job_id = uuid.uuid4()
 
         mock_job = Job(
@@ -181,7 +177,7 @@ class TestDetect:
         )
 
         mock_session = _make_mock_session([mock_job])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ATSDetectRequest(job_id=job_id)
 
         from fastapi import HTTPException
@@ -195,11 +191,10 @@ class TestDetect:
         from app.auth import CurrentUser
         from app.routes.apply import detect_ats
 
-        user_id = uuid.UUID(TEST_USER_ID)
         job_id = uuid.uuid4()
 
         mock_session = _make_mock_session([None])
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ATSDetectRequest(job_id=job_id)
 
         from fastapi import HTTPException
@@ -214,7 +209,6 @@ class TestDetect:
         from app.models.job import Job
         from app.routes.apply import detect_ats
 
-        user_id = uuid.UUID(TEST_USER_ID)
         job_id = uuid.uuid4()
 
         mock_job = Job(
@@ -233,7 +227,7 @@ class TestDetect:
         mock_session = AsyncMock()
         mock_session.execute.side_effect = [job_result, app_result]
 
-        user = CurrentUser(id=user_id, email="test@example.com")
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ATSDetectRequest(job_id=job_id)
 
         from fastapi import HTTPException
@@ -241,3 +235,56 @@ class TestDetect:
         with pytest.raises(HTTPException) as exc_info:
             await detect_ats(request, user, mock_session)
         assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_detect_source_url_without_apply_url_enqueues(self):
+        from app.auth import CurrentUser
+        from app.models.application import Application
+        from app.models.job import Job
+        from app.routes.apply import detect_ats
+
+        job_id = uuid.uuid4()
+        app_id = uuid.uuid4()
+
+        mock_job = Job(
+            id=job_id,
+            source="linkedin",
+            title="Test",
+            company="TestCo",
+            source_url="https://careers.example.com/jobs/1",
+            apply_url=None,
+        )
+        application = Application(
+            id=app_id,
+            user_id=TEST_USER_ID,
+            job_id=job_id,
+            status=ApplicationStatus.saved,
+        )
+
+        job_result = MagicMock()
+        job_result.scalar_one_or_none.return_value = mock_job
+        app_result = MagicMock()
+        app_result.scalar_one_or_none.return_value = application
+
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = [job_result, app_result]
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
+        request = ATSDetectRequest(job_id=job_id)
+
+        mock_arq_job = MagicMock()
+        mock_arq_job.job_id = "ats_task_789"
+        mock_pool = AsyncMock()
+        mock_pool.enqueue_job = AsyncMock(return_value=mock_arq_job)
+        mock_pool.close = AsyncMock()
+
+        with patch("app.routes.apply.arq_create_pool", return_value=mock_pool):
+            response = await detect_ats(request, user, mock_session)
+
+        assert response.application_id == app_id
+        assert response.task_id == "ats_task_789"
+        mock_pool.enqueue_job.assert_awaited_once()
+        enqueue_call = mock_pool.enqueue_job.await_args
+        assert enqueue_call.args[3] == ""

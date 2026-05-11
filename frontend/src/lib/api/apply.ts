@@ -1,4 +1,4 @@
-import { getAuthHeaders } from "@/lib/api";
+import { authenticatedFetch } from "@/lib/api";
 import type {
   ApplySingleRequest,
   ApplySingleResponse,
@@ -9,20 +9,11 @@ import type {
   ApplySSEEvent,
 } from "@/types/apply";
 
-function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-}
-
 const TERMINAL_STATUSES = new Set(["applied", "applied_with_issues", "manual_required", "failed", "rejected", "withdrawn"]);
 
 export async function applySingle(applicationId: string): Promise<ApplySingleResponse> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}/api/apply/single`, {
+  const response = await authenticatedFetch("/api/apply/single", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-    },
     body: JSON.stringify({ application_id: applicationId } satisfies ApplySingleRequest),
   });
 
@@ -45,13 +36,8 @@ export async function applyBulk(applicationIds: string[]): Promise<ApplyBulkResp
     throw { status: 400, message: "Must select between 1 and 10 applications." };
   }
 
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}/api/apply/bulk`, {
+  const response = await authenticatedFetch("/api/apply/bulk", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-    },
     body: JSON.stringify({ application_ids: applicationIds } satisfies ApplyBulkRequest),
   });
 
@@ -70,13 +56,8 @@ export async function applyBulk(applicationIds: string[]): Promise<ApplyBulkResp
 }
 
 export async function getApplyStatus(applicationId: string): Promise<ApplyStatusResponse> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}/api/apply/${applicationId}/status`, {
+  const response = await authenticatedFetch(`/api/apply/${applicationId}/status`, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-    },
   });
 
   if (!response.ok) {
@@ -94,13 +75,8 @@ export async function getApplyStatus(applicationId: string): Promise<ApplyStatus
 }
 
 export async function getBulkApplyStatus(taskId: string): Promise<ApplyBulkStatusResponse> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}/api/apply/bulk/${taskId}/status`, {
+  const response = await authenticatedFetch(`/api/apply/bulk/${taskId}/status`, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-    },
   });
 
   if (!response.ok) {
@@ -144,18 +120,13 @@ export function connectApplyStream(
 
   async function connect(): Promise<void> {
     try {
-      const authHeaders = await getAuthHeaders();
-      const response = await fetch(
-        `${getBaseUrl()}/api/apply/${applicationId}/stream`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "text/event-stream",
-            ...authHeaders,
-          },
-          signal: controller.signal,
+      const response = await authenticatedFetch(`/api/apply/${applicationId}/stream`, {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
         },
-      );
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
         throw new Error(`Stream request failed: ${response.status}`);
@@ -230,16 +201,20 @@ export function connectApplyStream(
           step: status.step,
           status: status.status,
           error: status.error,
+          notes: status.notes,
+          manual_url: status.manual_url,
         });
 
         if (TERMINAL_STATUSES.has(status.status)) {
-          callbacks.onEvent({
-            event: "done",
-            application_id: applicationId,
-            step: null,
-            status: status.status,
-            error: null,
-          });
+        callbacks.onEvent({
+          event: "done",
+          application_id: applicationId,
+          step: null,
+          status: status.status,
+          error: null,
+          notes: status.notes,
+          manual_url: status.manual_url,
+        });
           callbacks.onDone();
           return;
         }

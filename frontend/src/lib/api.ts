@@ -4,7 +4,9 @@ import { toast } from "sonner";
 interface ClerkLike {
   loaded?: boolean;
   session?: {
-    getToken: (options?: { template?: string }) => Promise<string | null | undefined>;
+    getToken: (
+      options?: { template?: string; skipCache?: boolean },
+    ) => Promise<string | null | undefined>;
   };
 }
 
@@ -20,7 +22,9 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-async function getBrowserClerkAuthHeaders(): Promise<Record<string, string>> {
+async function getBrowserClerkAuthHeaders(
+  skipCache = false,
+): Promise<Record<string, string>> {
   if (typeof window === "undefined") {
     return {};
   }
@@ -31,7 +35,9 @@ async function getBrowserClerkAuthHeaders(): Promise<Record<string, string>> {
   }
 
   try {
-    const token = await clerk.session.getToken();
+    const token = await clerk.session.getToken(
+      skipCache ? { skipCache: true } : undefined,
+    );
     if (token) {
       return { Authorization: `Bearer ${token}` };
     }
@@ -47,11 +53,68 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
     return { "X-Dev-Bypass": "true" };
   }
 
-  return getBrowserClerkAuthHeaders();
+  return getBrowserClerkAuthHeaders(false);
 }
 
-function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+async function resolveAuthHeaders(forceFreshToken: boolean): Promise<Record<string, string>> {
+  if (process.env.NEXT_PUBLIC_BYPASS_AUTH === "true") {
+    return { "X-Dev-Bypass": "true" };
+  }
+
+  return getBrowserClerkAuthHeaders(forceFreshToken);
+}
+
+export function getApiBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_API_URL;
+  if (typeof raw === "string" && raw.trim() !== "") {
+    return raw.replace(/\/$/, "");
+  }
+  return "http://localhost:8000";
+}
+
+async function fetchWithAuthRetry(
+  path: string,
+  init: RequestInit,
+): Promise<Response> {
+  const url = `${getApiBaseUrl()}${path}`;
+
+  async function doFetch(forceFreshToken: boolean): Promise<Response> {
+    const auth = await resolveAuthHeaders(forceFreshToken);
+    const headers: Record<string, string> = {
+      ...auth,
+      ...(init.headers as Record<string, string> | undefined),
+    };
+    if (!(init.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    return fetch(url, {
+      ...init,
+      headers,
+    });
+  }
+
+  let response = await doFetch(false);
+  if (
+    response.status === 401 &&
+    typeof window !== "undefined" &&
+    process.env.NEXT_PUBLIC_BYPASS_AUTH !== "true"
+  ) {
+    const refreshed = await resolveAuthHeaders(true);
+    if (refreshed.Authorization) {
+      response = await doFetch(true);
+    }
+  }
+
+  return response;
+}
+
+/** Authenticated fetch with one Clerk token refresh retry on 401. */
+export async function authenticatedFetch(
+  path: string,
+  init: RequestInit,
+): Promise<Response> {
+  return fetchWithAuthRetry(path, init);
 }
 
 function handle401(): void {
@@ -109,14 +172,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 async function get<T>(path: string, options?: RequestOptions): Promise<T> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...options?.headers,
-    },
+    headers: options?.headers,
     signal: options?.signal,
   });
   return handleResponse<T>(response);
@@ -127,14 +185,9 @@ async function post<T>(
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...options?.headers,
-    },
+    headers: options?.headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<T>(response);
@@ -145,14 +198,9 @@ async function put<T>(
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...options?.headers,
-    },
+    headers: options?.headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<T>(response);
@@ -163,28 +211,18 @@ async function patch<T>(
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...options?.headers,
-    },
+    headers: options?.headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<T>(response);
 }
 
 async function del<T>(path: string, options?: RequestOptions): Promise<T> {
-  const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...options?.headers,
-    },
+    headers: options?.headers,
   });
   return handleResponse<T>(response);
 }
