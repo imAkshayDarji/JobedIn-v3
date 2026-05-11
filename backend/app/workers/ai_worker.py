@@ -1,5 +1,4 @@
 import logging
-import uuid
 from typing import Any
 
 from arq import cron
@@ -20,7 +19,7 @@ async def _persist_token_usage(
 
     for entry in token_usage.get("detail", []):
         record = AITokenUsage(
-            user_id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
+            user_id=str(user_id),
             task=entry["task"],
             model_used=entry["model_used"],
             prompt_tokens=entry["prompt_tokens"],
@@ -300,17 +299,18 @@ async def sweep_stale_jobs(ctx: dict[str, Any]) -> None:
     redis = ctx["redis"]
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
 
+    import json
+
     stale_count = 0
-    cursor = b"0"
+    cursor = 0
     while True:
-        cursor, keys = await redis.hscan("arq:job:result", cursor)
-        for key in keys:
-            job_data = await redis.hget("arq:job:result", key)
+        cursor, entries = await redis.hscan("arq:job:result", cursor, count=200)
+        for field_key in entries:
+            job_data = await redis.hget("arq:job:result", field_key)
             if job_data is None:
                 continue
 
             try:
-                import json
                 data = json.loads(job_data)
                 job_result = data.get("result")
                 if job_result is not None:
@@ -331,7 +331,10 @@ async def sweep_stale_jobs(ctx: dict[str, Any]) -> None:
                 continue
 
             stale_count += 1
-            await redis.hdel("arq:job:result", key)
+            await redis.hdel("arq:job:result", field_key)
+
+        if cursor == 0:
+            break
 
     async with async_session_factory() as session:
         stale_statuses = ["generating"]
