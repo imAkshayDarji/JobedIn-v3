@@ -21,6 +21,7 @@ from app.models.application import Application
 from app.models.base import ApplicationStatus
 from app.models.job import Job
 from app.schemas.apply import (
+    ApplySinglePhase,
     ATSDetectRequest,
     ATSDetectResponse,
     ATSDetectionStatusResponse,
@@ -45,6 +46,14 @@ TERMINAL_STATUSES = frozenset({
     ApplicationStatus.manual_required,
     ApplicationStatus.failed,
 })
+
+
+async def _clear_apply_progress(application_id: uuid.UUID) -> None:
+    raw_redis = _get_raw_redis()
+    try:
+        await raw_redis.delete(f"{PROGRESS_PREFIX}{application_id}")
+    finally:
+        await raw_redis.aclose()
 
 
 def _get_redis_settings() -> RedisSettings:
@@ -72,11 +81,7 @@ async def _validate_application_ownership(
 
 
 def _get_raw_redis() -> AsyncRedis:
-    url = settings.REDIS_URL
-    host = url.split("@")[-1].split(":")[0] if "@" in url else "localhost"
-    port = int(url.split(":")[-1].split("/")[0]) if ":" in url else 6379
-    database = int(url.rstrip("/").split("/")[-1]) if "/" in url else 0
-    return AsyncRedis(host=host, port=port, db=database, decode_responses=True)
+    return AsyncRedis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
 @apply_router.post("/detect", response_model=ATSDetectResponse)
@@ -187,6 +192,7 @@ async def get_detection_status(
         application_id=application.id,
         job_id=application.job_id,
         status=application.status.value if isinstance(application.status, ApplicationStatus) else str(application.status),
+        notes=application.notes,
         ats_platform=application.ats_platform,
         ats_detection_method=application.ats_detection_method,
         ats_confidence=application.ats_confidence,
@@ -255,6 +261,15 @@ async def apply_single(
 ) -> ApplySingleResponse:
     application = await _validate_application_ownership(session, body.application_id, user.id)
 
+    if application.status in (
+        ApplicationStatus.applied,
+        ApplicationStatus.applied_with_issues,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Application already has a submission outcome; auto-apply cannot run again.",
+        )
+
     if application.status == ApplicationStatus.saved:
         job_result = await session.execute(select(Job).where(Job.id == application.job_id))
         job = job_result.scalar_one_or_none()
@@ -270,9 +285,12 @@ async def apply_single(
         session.add(application)
         await session.commit()
 
+        await _clear_apply_progress(application.id)
+
+        arq_job_id = ""
         try:
             redis = await arq_create_pool(_get_redis_settings())
-            await redis.enqueue_job(
+            arq_job = await redis.enqueue_job(
                 "ats_detect_job",
                 str(application.id),
                 str(user.id),
@@ -280,6 +298,7 @@ async def apply_single(
                 _job_id=f"ats_detect_{application.id}",
                 _queue_name=QUEUE_JOBS,
             )
+            arq_job_id = arq_job.job_id if arq_job else ""
             await redis.close()
         except Exception as exc:
             logger.error(f"Failed to enqueue auto ATS detection: {exc}")
@@ -291,42 +310,63 @@ async def apply_single(
                 detail="Failed to start ATS detection.",
             )
 
-        for _ in range(90):
+        logger.info(
+            "apply_single_ats_detect_enqueued",
+            extra={
+                "application_id": str(application.id),
+                "user_id": str(user.id),
+            },
+        )
 
-            await asyncio.sleep(2)
+        return ApplySingleResponse(
+            application_id=application.id,
+            task_id=arq_job_id,
+            message="ATS detection started; poll status until ready.",
+            phase=ApplySinglePhase.detecting,
+        )
 
-            await session.refresh(application)
+    if application.status == ApplicationStatus.generating:
+        return ApplySingleResponse(
+            application_id=application.id,
+            task_id="",
+            message="ATS detection in progress.",
+            phase=ApplySinglePhase.detecting,
+        )
 
-            if application.status in (
-                ApplicationStatus.ready,
-                ApplicationStatus.failed,
-                ApplicationStatus.manual_required,
-            ):
-                break
+    if application.status == ApplicationStatus.manual_required:
+        return ApplySingleResponse(
+            application_id=application.id,
+            task_id="",
+            message=application.notes or "Manual completion is required before auto-apply can run.",
+            phase=ApplySinglePhase.manual_required,
+        )
 
-        if application.status == ApplicationStatus.manual_required:
-            return ApplySingleResponse(
-                application_id=application.id,
-                task_id="",
-                message=application.notes or "Manual completion is required before auto-apply can run.",
-            )
-
-        if application.status != ApplicationStatus.ready:
-            error_msg = application.ats_detection_error or f"ATS detection {application.status.value}"
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"ATS detection did not complete successfully: {error_msg}",
-            )
-
-    elif application.status != ApplicationStatus.ready:
+    if application.status == ApplicationStatus.failed:
+        error_msg = application.ats_detection_error or "Application is in failed status."
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Application is in '{application.status.value}' status, expected 'ready'.",
+            detail=error_msg,
+        )
+
+    if application.status == ApplicationStatus.applying:
+        return ApplySingleResponse(
+            application_id=application.id,
+            task_id="",
+            message="Auto-apply already running.",
+            phase=ApplySinglePhase.applying,
+        )
+
+    if application.status != ApplicationStatus.ready:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Application is in '{application.status.value}' status; cannot start auto-apply.",
         )
 
     application.status = ApplicationStatus.applying
     session.add(application)
     await session.commit()
+
+    await _clear_apply_progress(application.id)
 
     try:
         redis = await arq_create_pool(_get_redis_settings())
@@ -360,6 +400,7 @@ async def apply_single(
         application_id=application.id,
         task_id=arq_job.job_id if arq_job else "",
         message="Application started",
+        phase=ApplySinglePhase.applying,
     )
 
 
@@ -466,6 +507,7 @@ async def apply_status(
     application = await _validate_application_ownership(session, application_id, user.id)
 
     step: str | None = None
+    steps_completed_list: list[str] | None = None
     resume_id: uuid.UUID | None = None
     cover_letter_id: uuid.UUID | None = None
     error: str | None = application.ats_detection_error
@@ -477,7 +519,12 @@ async def apply_status(
     if progress_raw:
         try:
             progress_data = json.loads(progress_raw)
-            step = progress_data.get("current_step")
+            working = progress_data.get("working_step")
+            current = progress_data.get("current_step")
+            step = working if isinstance(working, str) and working.strip() else current
+            raw_steps = progress_data.get("steps_completed")
+            if isinstance(raw_steps, list):
+                steps_completed_list = [str(s) for s in raw_steps if isinstance(s, str)]
             resume_id_str = progress_data.get("resume_id")
             cover_letter_id_str = progress_data.get("cover_letter_id")
             resume_id = uuid.UUID(resume_id_str) if resume_id_str else None
@@ -489,6 +536,7 @@ async def apply_status(
         application_id=application.id,
         status=application.status.value if isinstance(application.status, ApplicationStatus) else str(application.status),
         step=step,
+        steps_completed=steps_completed_list,
         error=error,
         notes=application.notes,
         resume_id=resume_id,
@@ -508,22 +556,27 @@ async def apply_stream(
 
     async def event_generator():
         raw_redis = _get_raw_redis()
-        last_step: str | None = None
-        last_status: str | None = None
+        last_progress_sig: tuple[str | None, tuple[str, ...], str | None] | None = None
 
         try:
             while True:
                 progress_raw = await raw_redis.get(f"{PROGRESS_PREFIX}{application_id}")
 
-                current_step = None
+                working_step: str | None = None
+                steps_completed_list: list[str] = []
                 current_status = None
                 current_error = None
                 current_notes = None
+                app = None
 
                 if progress_raw:
                     try:
                         progress_data = json.loads(progress_raw)
-                        current_step = progress_data.get("current_step")
+                        ws = progress_data.get("working_step")
+                        working_step = ws if isinstance(ws, str) and ws.strip() else None
+                        raw_steps = progress_data.get("steps_completed")
+                        if isinstance(raw_steps, list):
+                            steps_completed_list = [str(s) for s in raw_steps if isinstance(s, str)]
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -537,25 +590,29 @@ async def apply_stream(
                         current_error = app.ats_detection_error
                         current_notes = app.notes
 
-                if current_step != last_step or current_status != last_status:
+                progress_sig = (working_step, tuple(steps_completed_list), current_status)
+                if progress_sig != last_progress_sig:
+                    effective_step = working_step
                     event_data = json.dumps({
-                        "event": "step_completed" if current_step != last_step else "status_changed",
+                        "event": "progress",
                         "application_id": str(application_id),
-                        "step": current_step,
+                        "step": effective_step,
+                        "steps_completed": steps_completed_list,
                         "status": current_status,
                         "error": current_error,
                         "notes": current_notes,
                         "manual_url": app.ats_form_url if app else None,
                     })
                     yield f"data: {event_data}\n\n"
-                    last_step = current_step
-                    last_status = current_status
+                    last_progress_sig = progress_sig
 
                 if current_status and current_status in {s.value for s in TERMINAL_STATUSES}:
                     done_data = json.dumps({
                         "event": "done",
                         "application_id": str(application_id),
                         "status": current_status,
+                        "steps_completed": steps_completed_list,
+                        "error": current_error,
                         "notes": app.notes if app else None,
                         "manual_url": app.ats_form_url if app else None,
                     })

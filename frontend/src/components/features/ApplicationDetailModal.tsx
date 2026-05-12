@@ -183,7 +183,7 @@ export function ApplicationDetailModal({
             )}
 
             <div className="flex flex-wrap gap-2">
-              {application.status === "ready" && (
+              {(application.status === "saved" || application.status === "ready") && (
                 <button
                   type="button"
                   onClick={handleAutoApply}

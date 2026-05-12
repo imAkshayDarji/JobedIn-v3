@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     ATS_APPLY_STALE_MINUTES: int = 15
     ATS_RESUME_FILE_FORMAT: str = "txt"
 
+    APPLY_URL_RESOLUTION_TIMEOUT_S: float = 30.0
+    APPLY_URL_HTTP_REDIRECT_TIMEOUT_S: float = 10.0
+    APPLY_URL_BATCH_SIZE: int = 10
+
     CORS_ORIGINS: str = "http://localhost:3000"
 
     BYPASS_AUTH: bool = False

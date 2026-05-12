@@ -7,12 +7,22 @@ import { ApplyModal } from "../ApplyModal";
 vi.mock("@/lib/api/apply", () => ({
   applySingle: vi.fn(),
   connectApplyStream: vi.fn(() => new AbortController()),
+  getApplyDetectionStatus: vi.fn(),
 }));
 
 import { applySingle, connectApplyStream } from "@/lib/api/apply";
 
 const mockApplySingle = vi.mocked(applySingle);
 const mockConnectApplyStream = vi.mocked(connectApplyStream);
+
+function applyingResponse() {
+  return {
+    application_id: "app-123",
+    task_id: "task-1",
+    message: "Started",
+    phase: "applying" as const,
+  };
+}
 
 const defaultProps = {
   applicationId: "app-123",
@@ -33,11 +43,7 @@ describe("ApplyModal", () => {
   });
 
   it("shows close confirmation when clicking close during active apply", async () => {
-    mockApplySingle.mockResolvedValueOnce({
-      application_id: "app-123",
-      task_id: "task-1",
-      message: "Started",
-    });
+    mockApplySingle.mockResolvedValueOnce(applyingResponse());
 
     render(<ApplyModal {...defaultProps} />);
 
@@ -78,11 +84,7 @@ describe("ApplyModal", () => {
   it("displays success result on applied status event", async () => {
     let capturedCallbacks: import("@/lib/api/apply").SSECallbacks | null = null;
 
-    mockApplySingle.mockResolvedValueOnce({
-      application_id: "app-123",
-      task_id: "task-1",
-      message: "Started",
-    });
+    mockApplySingle.mockResolvedValueOnce(applyingResponse());
 
     mockConnectApplyStream.mockImplementationOnce(
       (_appId: string, callbacks: import("@/lib/api/apply").SSECallbacks) => {
@@ -104,10 +106,11 @@ describe("ApplyModal", () => {
     });
 
     capturedCallbacks!.onEvent({
-      event: "status_changed",
+      event: "progress",
       application_id: "app-123",
       step: "submitting",
-      status: null,
+      steps_completed: ["load_profile"],
+      status: "applying",
       error: null,
     });
 

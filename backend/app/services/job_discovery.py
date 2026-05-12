@@ -290,7 +290,7 @@ class JobDiscoveryService:
 
         source_url = (raw.get("source_url") or "").strip() or None
         raw_apply = (raw.get("apply_url") or "").strip() or None
-        apply_url = raw_apply or source_url
+        apply_url = raw_apply
         external_id = raw.get("external_id")
 
         if not external_id and source == JobSource.linkedin:

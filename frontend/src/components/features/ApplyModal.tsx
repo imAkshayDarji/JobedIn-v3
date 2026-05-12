@@ -9,10 +9,24 @@ import {
   ExternalLink,
   RotateCcw,
   Camera,
+  Loader2,
 } from "lucide-react";
 import { ApplyStepProgress } from "./ApplyStepProgress";
-import { applySingle, connectApplyStream } from "@/lib/api/apply";
+import {
+  applySingle,
+  connectApplyStream,
+  getApplyDetectionStatus,
+} from "@/lib/api/apply";
 import type { ApplySSEEvent } from "@/types/apply";
+
+const DETECTION_POLL_MS = 1500;
+const MAX_DETECTION_POLLS = 120;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 interface ApplyModalProps {
   applicationId: string;
@@ -39,12 +53,12 @@ export function ApplyModal({
 }: ApplyModalProps) {
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const [currentStep, setCurrentStep] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showScreenshot, setShowScreenshot] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
   const [started, setStarted] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -61,20 +75,19 @@ export function ApplyModal({
   const handleEvent = useCallback((event: ApplySSEEvent) => {
     if (!mountedRef.current) return;
 
-    if (event.event === "step_completed" && event.step) {
-      setCompletedSteps((prev) => {
-        const next = new Set(prev);
-        next.add(event.step!);
-        return next;
-      });
+    if (event.event === "progress") {
+      if (event.steps_completed != null) {
+        setCompletedSteps(new Set(event.steps_completed));
+      }
+      setCurrentStep(event.step ?? null);
+      return;
+    }
+
+    if (event.event === "done") {
+      if (event.steps_completed != null) {
+        setCompletedSteps(new Set(event.steps_completed));
+      }
       setCurrentStep(null);
-    }
-
-    if (event.event === "status_changed" && event.step) {
-      setCurrentStep(event.step);
-    }
-
-    if (event.event === "done" || (event.event === "status_changed" && event.status)) {
       const status = event.status;
       if (status === "applied") {
         setResult({ type: "success" });
@@ -90,7 +103,6 @@ export function ApplyModal({
         setResult({ type: "failed", error: event.error ?? "Application failed" });
       }
       setIsApplying(false);
-      setCurrentStep(null);
     }
   }, []);
 
@@ -106,23 +118,85 @@ export function ApplyModal({
     setIsApplying(false);
   }, []);
 
-  const startApply = useCallback(
-    async (isResume: boolean) => {
-      setIsApplying(true);
-      setError(null);
-      setResult(null);
-      setCompletedSteps(new Set());
-      setCurrentStep(null);
-      setStarted(true);
+  const beginFullApply = useCallback(async () => {
+    setIsApplying(true);
+    setError(null);
+    setResult(null);
+    setCompletedSteps(new Set());
+    setCurrentStep(null);
+    setDetecting(false);
+    setStarted(true);
 
-      try {
-        if (!isResume) {
-          await applySingle(applicationId);
+    const runDetectionPhaseAndEnqueue = async (): Promise<boolean> => {
+      let resp = await applySingle(applicationId);
+
+      if (resp.phase === "manual_required") {
+        const det = await getApplyDetectionStatus(applicationId);
+        setResult({
+          type: "manual",
+          manualUrl: det.ats_form_url ?? null,
+          notes: det.notes ?? det.ats_detection_error ?? resp.message ?? null,
+        });
+        return false;
+      }
+
+      if (resp.phase === "detecting") {
+        setDetecting(true);
+        let sawReady = false;
+        try {
+          for (let i = 0; i < MAX_DETECTION_POLLS; i++) {
+            await delay(DETECTION_POLL_MS);
+            const det = await getApplyDetectionStatus(applicationId);
+            if (det.status === "ready") {
+              sawReady = true;
+              break;
+            }
+            if (det.status === "manual_required") {
+              setResult({
+                type: "manual",
+                manualUrl: det.ats_form_url ?? null,
+                notes: det.notes ?? det.ats_detection_error ?? null,
+              });
+              return false;
+            }
+            if (det.status === "failed") {
+              setError(det.ats_detection_error ?? "ATS detection failed");
+              return false;
+            }
+          }
+          if (!sawReady) {
+            setError("ATS detection timed out. Close and try again.");
+            return false;
+          }
+        } finally {
+          setDetecting(false);
         }
-      } catch (err: unknown) {
-        const message =
-          (err as { message?: string })?.message ?? "Failed to start application";
-        setError(message);
+
+        resp = await applySingle(applicationId);
+      }
+
+      if (resp.phase === "manual_required") {
+        const det = await getApplyDetectionStatus(applicationId);
+        setResult({
+          type: "manual",
+          manualUrl: det.ats_form_url ?? null,
+          notes: det.notes ?? det.ats_detection_error ?? resp.message ?? null,
+        });
+        return false;
+      }
+
+      if (resp.phase !== "applying") {
+        setError(resp.message || "Could not start auto-apply");
+        return false;
+      }
+
+      return true;
+    };
+
+    try {
+      const ok = await runDetectionPhaseAndEnqueue();
+      if (!mountedRef.current) return;
+      if (!ok) {
         setIsApplying(false);
         return;
       }
@@ -133,17 +207,42 @@ export function ApplyModal({
         onDone: handleDone,
         onError: handleError,
       });
-    },
-    [applicationId, handleEvent, handleDone, handleError],
-  );
+    } catch (err: unknown) {
+      const message =
+        (err as { message?: string })?.message ?? "Failed to start application";
+      setError(message);
+      setIsApplying(false);
+      setDetecting(false);
+    }
+  }, [applicationId, handleEvent, handleDone, handleError]);
+
+  const beginStreamOnly = useCallback(() => {
+    setIsApplying(true);
+    setError(null);
+    setResult(null);
+    setDetecting(false);
+    setStarted(true);
+
+    abortRef.current?.abort();
+    abortRef.current = connectApplyStream(applicationId, {
+      onEvent: handleEvent,
+      onDone: handleDone,
+      onError: handleError,
+    });
+  }, [applicationId, handleEvent, handleDone, handleError]);
 
   useEffect(() => {
     if (started) return;
 
     if (initialStatus === "applying") {
-      startApply(true);
+      beginStreamOnly();
+      return;
     }
-  }, [initialStatus, started, startApply]);
+
+    if (initialStatus === "generating") {
+      void beginFullApply();
+    }
+  }, [initialStatus, started, beginStreamOnly, beginFullApply]);
 
   function handleClose() {
     if (isApplying && !showCloseConfirm) {
@@ -155,10 +254,11 @@ export function ApplyModal({
   }
 
   function handleRetry() {
-    setRetryCount((c) => c + 1);
     abortRef.current?.abort();
-    startApply(false);
+    void beginFullApply();
   }
+
+  const showStepProgress = !detecting && (isApplying || !!result || !!error);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center sm:items-center">
@@ -217,7 +317,7 @@ export function ApplyModal({
               </p>
               <button
                 type="button"
-                onClick={() => startApply(false)}
+                onClick={() => void beginFullApply()}
                 className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
               >
                 Start Auto Apply
@@ -225,7 +325,16 @@ export function ApplyModal({
             </div>
           )}
 
-          {(isApplying || result || error) && (
+          {detecting && (
+            <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/80 px-4 py-3">
+              <Loader2 className="w-5 h-5 shrink-0 animate-spin text-blue-600" />
+              <p className="text-sm text-blue-900">
+                Analyzing the employer application page and ATS (this may take a minute)…
+              </p>
+            </div>
+          )}
+
+          {showStepProgress && (
             <ApplyStepProgress completedSteps={completedSteps} currentStep={currentStep} />
           )}
 

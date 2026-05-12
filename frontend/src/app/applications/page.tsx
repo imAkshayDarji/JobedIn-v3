@@ -81,7 +81,7 @@ export default function ApplicationsPage() {
         listApplications({
           company: companySearch || undefined,
           status: statusFilter || undefined,
-          limit: 200,
+          limit: 100,
         }),
         getApplicationStats(),
       ]);
