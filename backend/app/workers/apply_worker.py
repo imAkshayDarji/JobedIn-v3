@@ -52,7 +52,7 @@ async def apply_single_job(
             timeout_ms=settings.ATS_FILL_TIMEOUT_SECONDS * 1000,
             screenshot_dir=settings.ATS_SCREENSHOT_DIR,
         ) as browser:
-            pipeline = AIPipeline(ai_client=AIClient())
+            pipeline = AIPipeline(ai_client=AIClient(), session_factory=session_factory)
             orchestrator = AutoApplyOrchestrator(
                 browser_service=browser,
                 ai_pipeline=pipeline,

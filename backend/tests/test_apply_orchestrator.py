@@ -51,11 +51,15 @@ def _make_job(
     job_id: uuid.UUID = TEST_JOB_ID,
     description: str = "Test job description",
     apply_url: str = "https://boards.greenhouse.io/test/jobs/1",
+    source: str = "adzuna",
+    source_url: str = "https://example.com/job/123",
 ) -> MagicMock:
     job = MagicMock()
     job.id = job_id
     job.description = description
     job.apply_url = apply_url
+    job.source = source
+    job.source_url = source_url
     return job
 
 
@@ -476,7 +480,8 @@ class TestEnqueueFailsRevertsStatus:
 
         request = ApplySingleRequest(application_id=TEST_APPLICATION_ID)
 
-        with patch("app.routes.apply.arq_create_pool", side_effect=Exception("ARQ down")):
+        with patch("app.routes.apply.arq_create_pool", side_effect=Exception("ARQ down")), \
+             patch("app.routes.apply._clear_apply_progress", new_callable=AsyncMock):
             from fastapi import HTTPException
             with pytest.raises(HTTPException) as exc_info:
                 await apply_single(_make_mock_request(), request, user, mock_session)
@@ -545,3 +550,56 @@ class TestSkipATSRedetect:
 
         assert result.success is True
         mock_apply.assert_called_once()
+
+
+class TestLinkedInRouting:
+    @pytest.mark.asyncio
+    async def test_linkedin_job_routes_to_li_handler(self):
+        """LinkedIn source jobs should be routed to LinkedInAutoApply."""
+        from app.models.base import JobSource
+
+        orchestrator, redis, browser, pipeline = _make_orchestrator()
+        profile = _make_profile()
+        resume = _make_resume()
+
+        with patch.object(orchestrator, "_load_profile", return_value=profile), \
+             patch.object(orchestrator, "_generate_resume", return_value=resume), \
+             patch.object(orchestrator, "_generate_cover_letter", return_value=None), \
+             patch.object(orchestrator, "_save_resume_to_file", return_value="/resumes/test.txt"), \
+             patch.object(orchestrator, "_update_status", new_callable=AsyncMock), \
+             patch.object(orchestrator, "_attempt_ats_apply") as mock_apply:
+            mock_apply.return_value = {
+                "status": ApplicationStatus.manual_required,
+                "manual_url": "https://linkedin.com/jobs/view/123",
+                "notes": "LinkedIn apply: No Easy Apply button found.",
+            }
+
+            result = await orchestrator.run(TEST_APPLICATION_ID, TEST_USER_ID)
+
+        assert result.status == ApplicationStatus.manual_required.value
+        mock_apply.assert_called_once()
+
+
+class TestApplyTimeURLResolution:
+    @pytest.mark.asyncio
+    async def test_no_ats_platform_triggers_url_resolution(self):
+        """Jobs with no ATS platform should trigger apply-time URL resolution."""
+        from app.models.base import JobSource
+
+        orchestrator, redis, browser, pipeline = _make_orchestrator()
+        profile = _make_profile()
+        resume = _make_resume()
+        application = _make_application(ats_platform=None, ats_form_url=None)
+
+        with patch.object(orchestrator, "_load_profile", return_value=profile), \
+             patch.object(orchestrator, "_generate_resume", return_value=resume), \
+             patch.object(orchestrator, "_generate_cover_letter", return_value=None), \
+             patch.object(orchestrator, "_save_resume_to_file", return_value="/resumes/test.txt"), \
+             patch.object(orchestrator, "_update_status", new_callable=AsyncMock), \
+             patch.object(orchestrator, "_attempt_ats_apply", return_value={
+                 "status": ApplicationStatus.manual_required,
+                 "manual_url": "https://example.com/apply",
+             }):
+            result = await orchestrator.run(TEST_APPLICATION_ID, TEST_USER_ID)
+
+        assert result.status == ApplicationStatus.manual_required.value

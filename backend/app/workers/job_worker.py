@@ -200,13 +200,17 @@ async def ats_detect_job(
 ) -> dict[str, Any]:
     """ARQ worker: detect ATS platform for a job application.
 
+    Uses ApplyURLService for source-specific URL resolution, then runs
+    ATS detection on the resolved URL. LinkedIn jobs skip URL resolution
+    (handled at apply-time by LinkedInAutoApply).
+
     Guards:
     - Catch-all rescue: reverts status to 'saved' on any error
     - Deleted-row guard: graceful exit if Application is gone
     """
     from app.database import async_session_factory
     from app.models.application import Application
-    from app.models.base import ApplicationStatus
+    from app.models.base import ApplicationStatus, JobSource
     from app.models.job import Job
     from app.services.ats_detector import ATSDetector
     from app.services.browser_service import BrowserService
@@ -241,6 +245,22 @@ async def ats_detect_job(
                 await session.commit()
                 return {"status": "failed", "error": "job_not_found"}
 
+            # LinkedIn: skip URL resolution entirely (handled at apply-time)
+            if job.source == JobSource.linkedin:
+                application.ats_platform = None
+                application.ats_detection_method = "linkedin_deferred"
+                application.ats_confidence = 0.0
+                application.ats_form_url = job.source_url
+                application.notes = "LinkedIn application will be resolved at apply time."
+                application.status = ApplicationStatus.ready
+                session.add(application)
+                await session.commit()
+                logger.info(
+                    "ats_detect_linkedin_deferred",
+                    extra={"application_id": application_id},
+                )
+                return {"status": "completed", "ats_platform": None, "detection_method": "linkedin_deferred"}
+
             apply_candidate = (apply_url or "").strip()
 
             async with BrowserService(
@@ -249,18 +269,42 @@ async def ats_detect_job(
                 screenshot_dir=settings.ATS_SCREENSHOT_DIR,
             ) as browser:
                 if not apply_candidate:
-                    from app.services.url_resolver import URLResolver
+                    from app.services.apply_url_service import ApplyURLService
 
-                    resolver = URLResolver(browser)
-                    resolved = await resolver.resolve(job)
-                    apply_candidate = (resolved.apply_url or "").strip()
+                    url_service = ApplyURLService(browser)
+                    resolution = await url_service.resolve(job)
+                    apply_candidate = (resolution.apply_url or "").strip()
+
+                    if apply_candidate and resolution.ats_platform:
+                        application.ats_platform = resolution.ats_platform
+                        application.ats_detection_method = resolution.method
+                        application.ats_confidence = 0.9
+                        application.ats_form_url = apply_candidate
+                        application.status = ApplicationStatus.ready
+                        session.add(application)
+                        await session.commit()
+                        logger.info(
+                            "ats_detect_url_resolved_via_service",
+                            extra={
+                                "application_id": application_id,
+                                "ats_platform": resolution.ats_platform,
+                                "method": resolution.method,
+                            },
+                        )
+                        return {
+                            "status": "completed",
+                            "ats_platform": resolution.ats_platform,
+                            "difficulty": "easy_apply",
+                            "detection_method": resolution.method,
+                        }
+
                     if not apply_candidate:
                         application.status = ApplicationStatus.manual_required
                         application.ats_platform = None
                         application.ats_detection_method = "failed"
                         application.ats_confidence = 0.0
                         application.ats_form_url = job.source_url or job.apply_url
-                        application.notes = resolved.error or "Could not resolve an apply URL automatically."
+                        application.notes = resolution.error or "Could not resolve an apply URL automatically."
                         application.ats_detection_error = None
                         application.ats_difficulty = None
                         session.add(application)
@@ -426,9 +470,116 @@ async def shutdown(ctx: dict[str, Any]) -> None:
     logger.info("Job worker shutting down")
 
 
+async def resolve_apply_urls_job(
+    ctx: dict[str, Any],
+    application_id: str,
+) -> dict[str, Any]:
+    """ARQ worker: resolve apply URL for a recently ingested API-source job.
+
+    Called after ingestion to pre-resolve apply URLs in the background so that
+    when a user clicks Apply, the URL is already ready.
+    """
+    from app.database import async_session_factory
+    from app.models.application import Application
+    from app.models.base import ApplicationStatus, JobSource
+    from app.models.job import Job
+    from app.services.apply_url_service import ApplyURLService
+    from app.services.browser_service import BrowserService
+
+    async with async_session_factory() as session:
+        result_stmt = await session.execute(
+            select(Application).where(Application.id == uuid.UUID(application_id))
+        )
+        application = result_stmt.scalar_one_or_none()
+
+        if application is None:
+            return {"status": "skipped", "reason": "application_deleted"}
+
+        if application.status not in (
+            ApplicationStatus.saved,
+            ApplicationStatus.generating,
+        ):
+            return {"status": "skipped", "reason": f"status_is_{application.status.value}"}
+
+        job_result = await session.execute(select(Job).where(Job.id == application.job_id))
+        job = job_result.scalar_one_or_none()
+        if job is None:
+            return {"status": "skipped", "reason": "job_not_found"}
+
+        if job.source == JobSource.linkedin:
+            return {"status": "skipped", "reason": "linkedin_deferred"}
+
+        if job.apply_url and _is_ats_url(job.apply_url):
+            return {"status": "skipped", "reason": "already_has_apply_url"}
+
+        try:
+            async with BrowserService(
+                headless=settings.ATS_DETECT_HEADLESS,
+                timeout_ms=settings.ATS_DETECT_TIMEOUT_MS,
+                screenshot_dir=settings.ATS_SCREENSHOT_DIR,
+            ) as browser:
+                url_service = ApplyURLService(browser)
+                resolution = await url_service.resolve(job)
+
+            if resolution.apply_url:
+                application.ats_form_url = resolution.apply_url
+                application.ats_platform = resolution.ats_platform
+                application.ats_detection_method = f"resolve_{resolution.method}"
+                application.ats_confidence = 0.8
+                application.status = ApplicationStatus.ready
+            else:
+                application.ats_form_url = job.source_url
+                application.notes = resolution.error or "Background URL resolution failed."
+                application.status = ApplicationStatus.saved
+
+            session.add(application)
+            await session.commit()
+
+            logger.info(
+                "resolve_apply_urls_complete",
+                extra={
+                    "application_id": application_id,
+                    "resolved": bool(resolution.apply_url),
+                    "method": resolution.method,
+                },
+            )
+
+            return {
+                "status": "completed",
+                "resolved": bool(resolution.apply_url),
+                "apply_url": resolution.apply_url,
+                "method": resolution.method,
+            }
+
+        except Exception as exc:
+            logger.error(
+                f"URL resolution failed for application {application_id}: {exc}",
+                exc_info=True,
+            )
+            return {"status": "failed", "error": str(exc)}
+
+
+def _is_ats_url(url: str) -> bool:
+    """Check if a URL matches a known ATS platform pattern."""
+    from app.services.ats_detector import ATS_URL_PATTERNS
+
+    for patterns in ATS_URL_PATTERNS.values():
+        for pat in patterns:
+            if pat.search(url):
+                return True
+    return False
+
+
 class JobWorkerSettings:
     queue_name = "arq:queue:jobs"
-    functions = [linkedin_discovery_job, api_discovery_job, match_jobs_job, ats_detect_job, fetch_job_detail_job]
+    functions = [
+        linkedin_discovery_job,
+        api_discovery_job,
+        match_jobs_job,
+        ats_detect_job,
+        fetch_job_detail_job,
+        resolve_apply_urls_job,
+    ]
     cron_jobs = [
         cron(
             sweep_stale_ats_detections,

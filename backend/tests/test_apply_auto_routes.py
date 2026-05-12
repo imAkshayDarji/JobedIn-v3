@@ -7,8 +7,9 @@ from starlette.requests import Request as StarletteRequest
 
 from app.config import settings
 from app.models.application import Application
-from app.models.base import ApplicationStatus
-from app.schemas.apply import ApplySingleRequest, ApplyBulkRequest
+from app.models.base import ApplicationStatus, JobSource
+from app.models.job import Job
+from app.schemas.apply import ApplySinglePhase, ApplySingleRequest, ApplyBulkRequest
 from tests.conftest import _mock_decode_token
 
 
@@ -74,17 +75,19 @@ class TestApplySingleSuccess:
         mock_arq_pool.enqueue_job = AsyncMock(return_value=mock_arq_job)
         mock_arq_pool.close = AsyncMock()
 
-        with patch("app.routes.apply.arq_create_pool", return_value=mock_arq_pool):
+        with patch("app.routes.apply.arq_create_pool", return_value=mock_arq_pool), \
+             patch("app.routes.apply._clear_apply_progress", new_callable=AsyncMock):
             response = await apply_single(_make_mock_request(), request, user, mock_session)
 
         assert response.application_id == app_id
         assert response.task_id == "test_task_123"
+        assert response.phase == ApplySinglePhase.applying
         assert application.status == ApplicationStatus.applying
 
 
-class TestApplySingleNotReady:
+class TestApplySingleGeneratingReturnsDetecting:
     @pytest.mark.asyncio
-    async def test_apply_single_not_ready(self):
+    async def test_apply_single_generating_is_idempotent(self):
         from app.auth import CurrentUser
         from app.routes.apply import apply_single
 
@@ -101,11 +104,86 @@ class TestApplySingleNotReady:
         user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
-        from fastapi import HTTPException
+        response = await apply_single(_make_mock_request(), request, user, mock_session)
 
-        with pytest.raises(HTTPException) as exc_info:
-            await apply_single(_make_mock_request(), request, user, mock_session)
-        assert exc_info.value.status_code == 409
+        assert response.phase == ApplySinglePhase.detecting
+        assert application.status == ApplicationStatus.generating
+
+
+class TestApplySingleSavedEnqueuesDetection:
+    @pytest.mark.asyncio
+    async def test_apply_single_saved_returns_detecting_phase(self):
+        from app.auth import CurrentUser
+        from app.routes.apply import apply_single
+
+        app_id = uuid.uuid4()
+        job_id = uuid.uuid4()
+
+        application = Application(
+            id=app_id,
+            user_id=TEST_USER_ID,
+            job_id=job_id,
+            status=ApplicationStatus.saved,
+        )
+        job = Job(
+            id=job_id,
+            source=JobSource.linkedin,
+            title="Engineer",
+            company="Co",
+            apply_url="https://boards.greenhouse.io/example/jobs/1",
+        )
+
+        app_result = MagicMock()
+        app_result.scalar_one_or_none.return_value = application
+        job_result = MagicMock()
+        job_result.scalar_one_or_none.return_value = job
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[app_result, job_result])
+        mock_session.commit = AsyncMock()
+        mock_session.add = MagicMock()
+
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
+        request = ApplySingleRequest(application_id=app_id)
+
+        mock_arq_pool = AsyncMock()
+        mock_arq_job = MagicMock()
+        mock_arq_job.job_id = "ats_task_xyz"
+        mock_arq_pool.enqueue_job = AsyncMock(return_value=mock_arq_job)
+        mock_arq_pool.close = AsyncMock()
+
+        with patch("app.routes.apply.arq_create_pool", return_value=mock_arq_pool), \
+             patch("app.routes.apply._clear_apply_progress", new_callable=AsyncMock):
+            response = await apply_single(_make_mock_request(), request, user, mock_session)
+
+        assert response.phase == ApplySinglePhase.detecting
+        assert response.task_id == "ats_task_xyz"
+        assert application.status == ApplicationStatus.generating
+
+
+class TestApplySingleApplyingIdempotent:
+    @pytest.mark.asyncio
+    async def test_apply_single_applying_returns_applying_phase(self):
+        from app.auth import CurrentUser
+        from app.routes.apply import apply_single
+
+        app_id = uuid.uuid4()
+
+        application = Application(
+            id=app_id,
+            user_id=TEST_USER_ID,
+            job_id=uuid.uuid4(),
+            status=ApplicationStatus.applying,
+        )
+
+        mock_session = _make_mock_session([application])
+        user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
+        request = ApplySingleRequest(application_id=app_id)
+
+        response = await apply_single(_make_mock_request(), request, user, mock_session)
+
+        assert response.phase == ApplySinglePhase.applying
+        assert application.status == ApplicationStatus.applying
 
 
 class TestApplySingleNotOwned:
@@ -172,7 +250,8 @@ class TestApplySingleEnqueueFails:
         user = CurrentUser(id=TEST_USER_ID, email="test@example.com")
         request = ApplySingleRequest(application_id=app_id)
 
-        with patch("app.routes.apply.arq_create_pool", side_effect=Exception("ARQ down")):
+        with patch("app.routes.apply.arq_create_pool", side_effect=Exception("ARQ down")), \
+             patch("app.routes.apply._clear_apply_progress", new_callable=AsyncMock):
             from fastapi import HTTPException
 
             with pytest.raises(HTTPException) as exc_info:

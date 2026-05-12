@@ -27,6 +27,8 @@ export const APPLY_STEPS: ApplyStep[] = [
   "verifying",
 ];
 
+export type ApplySinglePhase = "detecting" | "applying" | "manual_required";
+
 export interface ApplySingleRequest {
   application_id: string;
 }
@@ -35,6 +37,22 @@ export interface ApplySingleResponse {
   application_id: string;
   task_id: string;
   message: string;
+  phase?: ApplySinglePhase | null;
+}
+
+export interface ATSDetectionStatusResponse {
+  application_id: string;
+  job_id: string;
+  status: string;
+  notes: string | null;
+  ats_platform: string | null;
+  ats_detection_method: string | null;
+  ats_confidence: number | null;
+  ats_form_url: string | null;
+  ats_detected_fields: string[] | null;
+  ats_screenshot_path: string | null;
+  ats_detection_error: string | null;
+  ats_difficulty: string | null;
 }
 
 export interface ApplyBulkRequest {
@@ -51,6 +69,7 @@ export interface ApplyStatusResponse {
   application_id: string;
   status: string;
   step: string | null;
+  steps_completed: string[] | null;
   error: string | null;
   notes: string | null;
   resume_id: string | null;
@@ -73,6 +92,7 @@ export interface ApplySSEEvent {
   event: string;
   application_id: string;
   step: string | null;
+  steps_completed?: string[] | null;
   status: string | null;
   error: string | null;
   notes?: string | null;

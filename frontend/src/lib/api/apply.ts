@@ -1,12 +1,13 @@
 import { authenticatedFetch } from "@/lib/api";
 import type {
-  ApplySingleRequest,
-  ApplySingleResponse,
   ApplyBulkRequest,
   ApplyBulkResponse,
-  ApplyStatusResponse,
   ApplyBulkStatusResponse,
+  ApplySingleRequest,
+  ApplySingleResponse,
   ApplySSEEvent,
+  ApplyStatusResponse,
+  ATSDetectionStatusResponse,
 } from "@/types/apply";
 
 const TERMINAL_STATUSES = new Set(["applied", "applied_with_issues", "manual_required", "failed", "rejected", "withdrawn"]);
@@ -53,6 +54,25 @@ export async function applyBulk(applicationIds: string[]): Promise<ApplyBulkResp
   }
 
   return response.json() as Promise<ApplyBulkResponse>;
+}
+
+export async function getApplyDetectionStatus(applicationId: string): Promise<ATSDetectionStatusResponse> {
+  const response = await authenticatedFetch(`/api/apply/detect/${applicationId}/status`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const error = { status: response.status, message: response.statusText };
+    try {
+      const body = await response.json();
+      error.message = body.detail ?? JSON.stringify(body);
+    } catch {
+      error.message = await response.text();
+    }
+    throw error;
+  }
+
+  return response.json() as Promise<ATSDetectionStatusResponse>;
 }
 
 export async function getApplyStatus(applicationId: string): Promise<ApplyStatusResponse> {
@@ -156,7 +176,7 @@ export function connectApplyStream(
 
           callbacks.onEvent(event);
 
-          if (event.event === "done" || (event.status && TERMINAL_STATUSES.has(event.status))) {
+          if (event.event === "done") {
             callbacks.onDone();
             return;
           }
@@ -196,9 +216,10 @@ export function connectApplyStream(
         const status = await getApplyStatus(applicationId);
 
         callbacks.onEvent({
-          event: "status_changed",
+          event: "progress",
           application_id: applicationId,
           step: status.step,
+          steps_completed: status.steps_completed ?? [],
           status: status.status,
           error: status.error,
           notes: status.notes,
@@ -206,15 +227,16 @@ export function connectApplyStream(
         });
 
         if (TERMINAL_STATUSES.has(status.status)) {
-        callbacks.onEvent({
-          event: "done",
-          application_id: applicationId,
-          step: null,
-          status: status.status,
-          error: null,
-          notes: status.notes,
-          manual_url: status.manual_url,
-        });
+          callbacks.onEvent({
+            event: "done",
+            application_id: applicationId,
+            step: null,
+            steps_completed: status.steps_completed ?? [],
+            status: status.status,
+            error: status.error,
+            notes: status.notes,
+            manual_url: status.manual_url,
+          });
           callbacks.onDone();
           return;
         }

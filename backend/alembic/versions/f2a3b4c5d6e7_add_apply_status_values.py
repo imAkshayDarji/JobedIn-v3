@@ -22,7 +22,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    pass
+    op.execute(
+        "ALTER TYPE applicationstatus ADD VALUE IF NOT EXISTS 'applying'"
+    )
+    op.execute(
+        "ALTER TYPE applicationstatus ADD VALUE IF NOT EXISTS 'applied_with_issues'"
+    )
+    op.execute(
+        "ALTER TYPE applicationstatus ADD VALUE IF NOT EXISTS 'manual_required'"
+    )
+    op.execute(
+        "ALTER TYPE applicationstatus ADD VALUE IF NOT EXISTS 'failed'"
+    )
 
 
 def downgrade() -> None:

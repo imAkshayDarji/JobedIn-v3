@@ -423,6 +423,7 @@ class GenericFormDetector:
 
     async def try_submit(self, page: Page) -> bool:
 
+        # Phase 1: Standard submit elements
         selectors = (
             'button[type="submit"]',
             'input[type="submit"]',
@@ -446,19 +447,75 @@ class GenericFormDetector:
 
                 continue
 
-        for phrase in ("apply", "submit application", "submit"):
+        # Phase 2: Buttons matched by text (including initially disabled ones)
+        for phrase in ("apply now", "apply", "submit application", "submit",
+                        "send application", "send", "continue", "next"):
             rx = re.compile(re.escape(phrase), re.I)
             btn = page.get_by_role("button", name=rx).first
 
             try:
 
-                if await btn.is_visible():
+                if not await btn.is_visible(timeout=1500):
+                    continue
 
-                    await btn.click()
+                # Wait for disabled button to become enabled after form fill
+                try:
+                    await btn.wait_for(state="visible", timeout=3000)
+                    for _ in range(6):
+                        disabled = await btn.is_disabled()
+                        if not disabled:
+                            break
+                        await page.wait_for_timeout(500)
+                except Exception:
+                    pass
 
-                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                if await btn.is_disabled():
+                    continue
 
-                    return True
+                await btn.click()
+
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+
+                return True
+
+            except Exception:
+
+                continue
+
+        # Phase 3: Data-attribute selectors (e.g. Reed's data-qa="apply-btn")
+        data_selectors = (
+            'button[data-qa="apply-btn"]',
+            'button[data-qa="submit-btn"]',
+            'button[data-testid*="apply"]',
+            'button[data-testid*="submit"]',
+        )
+
+        for sel in data_selectors:
+
+            loc = page.locator(sel).first
+
+            try:
+
+                if not await loc.is_visible(timeout=1500):
+                    continue
+
+                try:
+                    for _ in range(6):
+                        disabled = await loc.is_disabled()
+                        if not disabled:
+                            break
+                        await page.wait_for_timeout(500)
+                except Exception:
+                    pass
+
+                if await loc.is_disabled():
+                    continue
+
+                await loc.click()
+
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+
+                return True
 
             except Exception:
 
