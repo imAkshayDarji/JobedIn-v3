@@ -4,6 +4,12 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
+class ApplySinglePhase(StrEnum):
+    detecting = "detecting"
+    applying = "applying"
+    manual_required = "manual_required"
+
+
 class ATSDifficultyEnum(StrEnum):
     easy_apply = "easy_apply"
     multi_step = "multi_step"
@@ -26,6 +32,7 @@ class ATSDetectionStatusResponse(BaseModel):
     application_id: uuid.UUID
     job_id: uuid.UUID
     status: str
+    notes: str | None = None
     ats_platform: str | None = None
     ats_detection_method: str | None = None
     ats_confidence: float | None = None
@@ -44,6 +51,7 @@ class ApplySingleResponse(BaseModel):
     application_id: uuid.UUID
     task_id: str
     message: str
+    phase: ApplySinglePhase | None = None
 
 
 class ApplyBulkRequest(BaseModel):
@@ -60,6 +68,7 @@ class ApplyStatusResponse(BaseModel):
     application_id: uuid.UUID
     status: str
     step: str | None = None
+    steps_completed: list[str] | None = None
     error: str | None = None
     notes: str | None = None
     resume_id: uuid.UUID | None = None
@@ -95,6 +104,7 @@ class ApplySSEEvent(BaseModel):
     event: str
     application_id: uuid.UUID
     step: str | None = None
+    steps_completed: list[str] | None = None
     status: str | None = None
     error: str | None = None
     notes: str | None = None

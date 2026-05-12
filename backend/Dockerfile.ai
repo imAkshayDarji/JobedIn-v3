@@ -1,0 +1,19 @@
+# AI queue worker (resume / cover letter / interview prep). Same base as API image
+# without HTTP server. On Railway: create a service using this Dockerfile and set
+# no HTTP healthcheck (see railway.worker.json); deploy vars match the API (DATABASE_URL, REDIS_URL, AI keys, Clerk JWKS if needed).
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN mkdir -p /app/screenshots /app/resumes && chown -R appuser:appuser /app
+
+USER appuser
+
+CMD ["arq", "app.workers.ai_worker.WorkerSettings"]

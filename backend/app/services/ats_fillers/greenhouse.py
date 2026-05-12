@@ -161,6 +161,12 @@ class GreenhouseFiller(ATSFiller):
             submit_btn = await page.query_selector("button[type='submit']")
 
         if submit_btn is None:
+            submit_btn = await page.query_selector("input[type='submit']")
+
+        if submit_btn is None:
+            submit_btn = await page.query_selector("#submit_app")
+
+        if submit_btn is None:
             raise ATSSubmitError("Submit button not found on Greenhouse form")
 
         await submit_btn.click()
