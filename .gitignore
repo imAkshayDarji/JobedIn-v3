@@ -51,3 +51,17 @@ backend/lib/
 # Misc
 *.bak
 *.tmp
+
+# Private / local-only docs (do not publish)
+plan.md
+**/plan.md
+docs/plans/
+docs/prd-*.md
+docs/interview-preparation-handbook.md
+docs/interview-preparation-handbook.pdf
+
+# Runtime artifacts (may contain PII)
+resumes/
+screenshots/
+backend/screenshots/
+backend/.pki/
