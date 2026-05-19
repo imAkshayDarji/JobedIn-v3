@@ -119,4 +119,4 @@ Full checklist, smoke tests, and troubleshooting: [docs/DEPLOY.md](docs/DEPLOY.m
 
 ## License
 
-Private repository — `imAkshayDarji/JobedIn-v3`.
+Public repository — [imAkshayDarji/JobedIn-v3](https://github.com/imAkshayDarji/JobedIn-v3). Add a license file if you intend open-source redistribution.

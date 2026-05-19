@@ -6,10 +6,12 @@ __pycache__/
 venv/
 env/
 
-# Environment
+# Environment (never commit secrets)
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+frontend/.env*
+backend/.env*
 
 # IDE
 .vscode/
@@ -44,6 +46,11 @@ docker-compose.override.yml
 coverage/
 .coverage
 htmlcov/
+.pytest_cache/
+.vercel/
+
+# Local Python environments
+backend/.venv*/
 
 # Vendored Python libs
 backend/lib/
