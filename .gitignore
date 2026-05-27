@@ -39,6 +39,12 @@ build/
 # Docker
 docker-compose.override.yml
 
+# Terraform
+infra/.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
 # Logs
 *.log
 
