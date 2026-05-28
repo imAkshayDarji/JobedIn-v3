@@ -254,7 +254,7 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.backend.arn
+    target_group_arn = aws_lb_target_group.frontend.arn
   }
 }
 
@@ -551,6 +551,168 @@ resource "aws_ecs_service" "apply_worker" {
 
   tags = {
     Name = "${var.project_name}-apply-worker-service"
+  }
+}
+
+# Frontend ECR Repository
+resource "aws_ecr_repository" "frontend" {
+  name                 = "${var.project_name}/frontend"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-frontend-ecr"
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "frontend" {
+  repository = aws_ecr_repository.frontend.name
+  policy     = aws_ecr_lifecycle_policy.backend.policy
+}
+
+# Frontend CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "frontend" {
+  name              = "/ecs/${var.project_name}/frontend"
+  retention_in_days = 7
+}
+
+# Frontend ALB Target Group
+resource "aws_lb_target_group" "frontend" {
+  name        = "${var.project_name}-frontend-tg"
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path                = "/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    matcher             = "200"
+  }
+
+  tags = {
+    Name = "${var.project_name}-frontend-tg"
+  }
+}
+
+# ALB Listener Rules — route API traffic to backend, everything else to frontend
+resource "aws_lb_listener_rule" "backend_api" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/health", "/docs", "/openapi.json", "/api/*"]
+    }
+  }
+}
+
+# Update HTTPS listener default to frontend
+resource "aws_lb_listener_rule" "frontend_default" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 200
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+}
+
+# Frontend Task Definition
+resource "aws_ecs_task_definition" "frontend" {
+  family                   = "${var.project_name}-frontend"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.task_execution.arn
+  task_role_arn            = aws_iam_role.task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "frontend"
+      image     = "${aws_ecr_repository.frontend.repository_url}:latest"
+      essential = true
+      portMappings = [
+        {
+          containerPort = 3000
+          protocol      = "tcp"
+        }
+      ]
+
+      environment = [
+        { name = "NODE_ENV", value = "production" },
+        { name = "PORT", value = "3000" },
+        { name = "NEXT_PUBLIC_API_URL", value = "https://${aws_lb.main.dns_name}" },
+        { name = "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", value = "pk_test_bmVhdC1zYWlsZmlzaC04MC5jbGVyay5hY2NvdW50cy5kZXYk" },
+        { name = "NEXT_PUBLIC_CLERK_SIGN_IN_URL", value = "/auth/login" },
+        { name = "NEXT_PUBLIC_CLERK_SIGN_UP_URL", value = "/auth/register" },
+        { name = "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL", value = "/dashboard" },
+        { name = "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL", value = "/onboarding" },
+        { name = "NEXT_PUBLIC_BYPASS_AUTH", value = "false" }
+      ]
+
+      secrets = [
+        { name = "CLERK_SECRET_KEY", valueFrom = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/clerk/secret-key" }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.frontend.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+
+  tags = {
+    Name = "${var.project_name}-frontend-task"
+  }
+}
+
+# Frontend ECS Service
+resource "aws_ecs_service" "frontend" {
+  name                               = "${var.project_name}-frontend"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.frontend.arn
+  desired_count                      = 1
+  launch_type                        = "FARGATE"
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 200
+
+  network_configuration {
+    subnets          = var.public_subnet_ids
+    security_groups  = [var.ecs_security_group_id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.frontend.arn
+    container_name   = "frontend"
+    container_port   = 3000
+  }
+
+  tags = {
+    Name = "${var.project_name}-frontend-service"
   }
 }
 
