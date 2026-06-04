@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { CoverLetterDownloadButton } from "@/components/features/CoverLetterDownloadButton";
 import { getCoverLetter, getCoverLetterStatus, deleteCoverLetter } from "@/lib/api/cover-letters";
 import type { CoverLetterResponse } from "@/types/cover-letter";
 
@@ -187,7 +188,8 @@ export default function CoverLetterDetailPage() {
 
         {coverLetter && !loading && !isGenerating && !error && (
           <>
-            <div className="flex items-center gap-3 mb-8">
+            <div className="flex items-center gap-3 mb-8 flex-wrap">
+              <CoverLetterDownloadButton coverLetterId={coverLetterId} />
               <Link
                 href="/cover-letters/generate"
                 className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"

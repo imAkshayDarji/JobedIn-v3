@@ -8,6 +8,7 @@ class CoverLetterGenerateRequest(BaseModel):
     job_id: uuid.UUID | None = None
     job_description: str | None = Field(default=None, max_length=10000)
     tone: str | None = Field(default="professional", pattern="^(professional|casual|enthusiastic)$")
+    force_regenerate: bool = False
 
     @model_validator(mode="after")
     def check_at_least_one_source(self) -> "CoverLetterGenerateRequest":
@@ -56,6 +57,7 @@ class CoverLetterResponse(BaseModel):
     company_name: str | None = None
     content: str | None = None
     content_json: dict | None = None
+    pdf_url: str | None = None
     tone: str | None = None
     ai_model_used: str | None = None
     status: str | None = None

@@ -77,6 +77,14 @@ class Settings(BaseSettings):
     BYPASS_AUTH_USER_EMAIL: str = "dev@jobedin.local"
     MAX_UPLOAD_SIZE_MB: int = 10
 
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = ""
+    S3_RESUME_UPLOAD_PREFIX: str = "resumes/uploads"
+    S3_RESUME_GENERATED_PREFIX: str = "resumes/generated"
+    S3_COVER_LETTER_PREFIX: str = "cover-letters/generated"
+
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_DEFAULT: str = "100/minute"
     RATE_LIMIT_AUTH: str = "10/minute"

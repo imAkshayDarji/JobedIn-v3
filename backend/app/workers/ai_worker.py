@@ -30,7 +30,16 @@ async def _persist_token_usage(
         session.add(record)
 
 
-async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str, candidate_profile_id: str, job_description: str) -> dict[str, Any]:
+async def generate_resume_job(
+    ctx: dict[str, Any],
+    resume_id: str,
+    user_id: str,
+    candidate_profile_id: str,
+    job_description: str,
+    uploaded_resume_text: str | None = None,
+    job_title: str = "",
+    company_name: str = "",
+) -> dict[str, Any]:
     from app.database import async_session_factory
     from app.models.resume import Resume
     from app.services.ai_client import AIClient
@@ -58,6 +67,10 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
             job_description=job_description,
             candidate_profile_id=candidate_profile_id,
             user_id=user_id,
+            uploaded_resume_text=uploaded_resume_text,
+            job_title=job_title,
+            company_name=company_name,
+            resume_id=resume_id,
             get_session=session_factory,
         )
 
@@ -71,6 +84,8 @@ async def generate_resume_job(ctx: dict[str, Any], resume_id: str, user_id: str,
                 resume.content_json = pipeline_result.get("resume")
                 resume.ats_score = pipeline_result.get("ats_result", {}).get("overall_score")
                 resume.ats_breakdown = pipeline_result.get("ats_result")
+                resume.pdf_s3_key = pipeline_result.get("pdf_s3_key")
+                resume.pdf_url = pipeline_result.get("pdf_url")
 
                 if token_usage.get("calls", 0) > 0:
                     usage_detail = []
@@ -117,6 +132,9 @@ async def generate_cover_letter_job(
     candidate_profile_id: str,
     job_description: str,
     tone: str = "professional",
+    generated_resume_json: dict[str, Any] | None = None,
+    job_title: str = "",
+    company_name: str = "",
 ) -> dict[str, Any]:
     from app.database import async_session_factory
     from app.models.cover_letter import CoverLetter
@@ -146,6 +164,10 @@ async def generate_cover_letter_job(
             candidate_profile_id=candidate_profile_id,
             user_id=user_id,
             tone=tone,
+            generated_resume_json=generated_resume_json,
+            job_title=job_title,
+            company_name=company_name,
+            cover_letter_id=cover_letter_id,
             get_session=session_factory,
         )
 
@@ -163,6 +185,8 @@ async def generate_cover_letter_job(
                 cover_letter.content = cover_letter_data.get("full_text", "")
                 cover_letter.tone = cover_letter_data.get("tone_used", tone)
                 cover_letter.ai_model_used = ai_model_used
+                cover_letter.pdf_s3_key = pipeline_result.get("pdf_s3_key")
+                cover_letter.pdf_url = pipeline_result.get("pdf_url")
 
                 if token_usage.get("calls", 0) > 0:
                     usage_detail = []

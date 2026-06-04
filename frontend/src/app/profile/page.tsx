@@ -26,7 +26,12 @@ import {
   getLinkedInStatus,
   saveLinkedInCredentials,
 } from "@/lib/api/settings";
-import { uploadResume } from "@/lib/api/onboarding";
+import {
+  deleteUserResume,
+  getUserResume,
+  uploadUserResume,
+  type UserResumeMetadata,
+} from "@/lib/api/user-resume";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProfileChildList } from "@/components/features/ProfileChildList";
 import { ProfileEntityForm } from "@/components/features/ProfileEntityForm";
@@ -116,11 +121,22 @@ export default function ProfilePage() {
 
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [isUploadingResume, setIsUploadingResume] = useState(false);
+  const [userResume, setUserResume] = useState<UserResumeMetadata | null>(null);
+
+  const fetchUserResume = useCallback(async () => {
+    try {
+      const meta = await getUserResume();
+      setUserResume(meta);
+    } catch {
+      setUserResume(null);
+    }
+  }, []);
 
   const fetchProfile = useCallback(async () => {
     try {
       const data = await getProfileFull();
       setProfileData(data);
+      await fetchUserResume();
     } catch (err: unknown) {
       const apiErr = err as { detail?: string; status?: number };
       if (apiErr.status === 404) {
@@ -131,7 +147,7 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchUserResume]);
 
   const fetchLinkedInStatus = useCallback(async () => {
     try {
@@ -186,15 +202,27 @@ export default function ProfilePage() {
   async function handleUploadResume() {
     if (!resumeFile) return;
     setIsUploadingResume(true);
+    setActionError(null);
     try {
-      await uploadResume(resumeFile);
+      await uploadUserResume(resumeFile);
       setResumeFile(null);
-      await fetchProfile();
+      await fetchUserResume();
     } catch (err: unknown) {
       const apiErr = err as { detail?: string };
       setActionError(apiErr.detail ?? "Failed to upload resume");
     } finally {
       setIsUploadingResume(false);
+    }
+  }
+
+  async function handleRemoveUserResume() {
+    setActionError(null);
+    try {
+      await deleteUserResume();
+      setUserResume(null);
+    } catch (err: unknown) {
+      const apiErr = err as { detail?: string };
+      setActionError(apiErr.detail ?? "Failed to remove resume");
     }
   }
 
@@ -458,13 +486,35 @@ export default function ProfilePage() {
         </ProfileSection>
 
         <ProfileSection title="Resume">
-          <div className="flex items-center gap-4">
+          {userResume?.has_uploaded_resume ? (
+            <div className="rounded-md border border-green-200 bg-green-50 p-3 mb-3">
+              <p className="text-sm font-medium text-green-900">
+                {userResume.filename ?? "Uploaded resume"}
+              </p>
+              {userResume.uploaded_at && (
+                <p className="text-xs text-green-800 mt-1">
+                  Uploaded{" "}
+                  {new Date(userResume.uploaded_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </p>
+              )}
+              <p className="text-xs text-green-800 mt-2">
+                Used as the primary source for AI resume and cover letter generation on every job.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 mb-3">
+              Upload your resume once — it will be used for all tailored resume and cover letter generation.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
             <input
               type="file"
-              accept=".pdf,.doc,.docx"
-              onChange={(e) =>
-                setResumeFile(e.target.files?.[0] ?? null)
-              }
+              accept=".pdf,.docx"
+              onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
               className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-gray-700 hover:file:bg-gray-200"
             />
             <button
@@ -473,13 +523,22 @@ export default function ProfilePage() {
               disabled={!resumeFile || isUploadingResume}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {isUploadingResume ? "Uploading..." : "Upload Resume"}
+              {isUploadingResume
+                ? "Uploading..."
+                : userResume?.has_uploaded_resume
+                  ? "Replace Resume"
+                  : "Upload Resume"}
             </button>
+            {userResume?.has_uploaded_resume && (
+              <button
+                type="button"
+                onClick={handleRemoveUserResume}
+                className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                Remove
+              </button>
+            )}
           </div>
-          <p className="mt-2 text-xs text-gray-500">
-            Upload a new resume to update your profile. AI-suggested updates
-            will appear in your profile.
-          </p>
         </ProfileSection>
       </div>
     </div>

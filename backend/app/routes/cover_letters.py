@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from arq import create_pool as arq_create_pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import RedirectResponse
 from slowapi.util import get_remote_address
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,9 @@ from app.middleware.rate_limit import limiter
 from app.models.candidate import CandidateProfile
 from app.models.cover_letter import CoverLetter
 from app.models.job import Job
+from app.models.resume import Resume
+from app.services.document_assets import delete_cover_letter_s3_assets
+from app.services.s3_storage import S3Storage, S3StorageError
 from app.schemas.cover_letter import (
     CoverLetterGenerateManualRequest,
     CoverLetterGenerateRequest,
@@ -43,6 +47,9 @@ async def _enqueue_cover_letter_job(
     profile_id: str,
     job_description: str,
     tone: str = "professional",
+    generated_resume_json: dict | None = None,
+    job_title: str = "",
+    company_name: str = "",
 ) -> None:
     redis = await arq_create_pool(_get_redis_settings())
     await redis.enqueue_job(
@@ -52,9 +59,37 @@ async def _enqueue_cover_letter_job(
         profile_id,
         job_description,
         tone,
+        generated_resume_json,
+        job_title,
+        company_name,
         _queue_name=QUEUE_AI,
     )
     await redis.close()
+
+
+async def _load_job_resume_json(
+    user_id: str,
+    job_id: uuid.UUID,
+    session: AsyncSession,
+) -> tuple[dict | None, str, str]:
+    result = await session.execute(
+        select(Resume).where(
+            Resume.user_id == user_id,
+            Resume.job_id == job_id,
+            Resume.status == "completed",
+        )
+    )
+    resume = result.scalar_one_or_none()
+    if resume is None or not resume.content_json:
+        return None, "", ""
+    job_title = ""
+    company_name = ""
+    job_result = await session.execute(select(Job).where(Job.id == job_id))
+    job = job_result.scalar_one_or_none()
+    if job:
+        job_title = job.title
+        company_name = job.company
+    return resume.content_json, job_title, company_name
 
 
 async def _resolve_profile(
@@ -97,6 +132,9 @@ async def generate_cover_letter(
 
     job_description: str | None = None
     job_id: uuid.UUID | None = body.job_id
+    job_title: str | None = None
+    company_name: str | None = None
+    generated_resume_json: dict | None = None
 
     if body.job_id:
         job_result = await session.execute(
@@ -109,30 +147,75 @@ async def generate_cover_letter(
                 detail="Job not found.",
             )
         job_description = job.description or ""
+        job_title = job.title
+        company_name = job.company
+        generated_resume_json, resume_job_title, resume_company = await _load_job_resume_json(
+            user.id, job_id, session
+        )
+        if not job_title:
+            job_title = resume_job_title
+        if not company_name:
+            company_name = resume_company
     else:
         job_description = body.job_description
 
-    # Dedup guard
+    if job_id and generated_resume_json is None and not body.force_regenerate:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Generate a resume for this job before creating a cover letter.",
+        )
+
     if job_id:
         cutoff = datetime.utcnow() - timedelta(minutes=DEDUP_WINDOW_MINUTES)
-        existing_result = await session.execute(
+        in_progress_result = await session.execute(
             select(CoverLetter).where(
                 CoverLetter.user_id == user.id,
                 CoverLetter.job_id == job_id,
+                CoverLetter.status == "generating",
                 CoverLetter.created_at > cutoff,
             )
         )
-        existing = existing_result.scalar_one_or_none()
-        if existing and existing.status == "completed":
-            logger.info(
-                "cover_letter_dedup_hit",
-                extra={"user_id": str(user.id), "job_id": str(job_id), "cover_letter_id": str(existing.id)},
-            )
+        in_progress = in_progress_result.scalar_one_or_none()
+        if in_progress:
             return CoverLetterGenerateResponse(
-                cover_letter_id=existing.id,
-                status="completed",
-                content_json=existing.content_json,
+                cover_letter_id=in_progress.id,
+                status=in_progress.status or "generating",
             )
+
+        if not body.force_regenerate:
+            completed_result = await session.execute(
+                select(CoverLetter).where(
+                    CoverLetter.user_id == user.id,
+                    CoverLetter.job_id == job_id,
+                    CoverLetter.status == "completed",
+                )
+            )
+            existing = completed_result.scalar_one_or_none()
+            if existing:
+                logger.info(
+                    "cover_letter_dedup_hit",
+                    extra={
+                        "user_id": str(user.id),
+                        "job_id": str(job_id),
+                        "cover_letter_id": str(existing.id),
+                    },
+                )
+                return CoverLetterGenerateResponse(
+                    cover_letter_id=existing.id,
+                    status="completed",
+                    content_json=existing.content_json,
+                )
+        else:
+            old_result = await session.execute(
+                select(CoverLetter).where(
+                    CoverLetter.user_id == user.id,
+                    CoverLetter.job_id == job_id,
+                )
+            )
+            for old in old_result.scalars().all():
+                await delete_cover_letter_s3_assets(old)
+                await session.delete(old)
+            await session.commit()
 
     tone = body.tone or "professional"
     cover_letter = CoverLetter(
@@ -148,7 +231,14 @@ async def generate_cover_letter(
 
     try:
         await _enqueue_cover_letter_job(
-            str(cover_letter.id), str(user.id), str(profile.id), job_description, tone
+            str(cover_letter.id),
+            str(user.id),
+            str(profile.id),
+            job_description,
+            tone,
+            generated_resume_json=generated_resume_json,
+            job_title=job_title or "",
+            company_name=company_name or "",
         )
     except Exception as exc:
         logger.error(f"Failed to enqueue ARQ job: {exc}", extra={"cover_letter_id": str(cover_letter.id)})
@@ -341,12 +431,48 @@ async def get_cover_letter(
         company_name=company_name,
         content=cover_letter.content,
         content_json=cover_letter.content_json,
+        pdf_url=cover_letter.pdf_url,
         tone=cover_letter.tone,
         ai_model_used=cover_letter.ai_model_used,
         status=cover_letter.status,
         created_at=cover_letter.created_at,
         updated_at=cover_letter.updated_at,
     )
+
+
+@router.get("/{cover_letter_id}/pdf")
+async def download_cover_letter_pdf(
+    cover_letter_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    result = await session.execute(
+        select(CoverLetter).where(CoverLetter.id == cover_letter_id)
+    )
+    cover_letter = result.scalar_one_or_none()
+    if cover_letter is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cover letter not found.",
+        )
+    await _check_ownership(cover_letter, user)
+    if not cover_letter.pdf_s3_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF not available for this cover letter.",
+        )
+    try:
+        storage = S3Storage()
+        url = await storage.get_presigned_url(cover_letter.pdf_s3_key)
+        cover_letter.pdf_url = url
+        session.add(cover_letter)
+        await session.commit()
+        return RedirectResponse(url=url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except S3StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to generate download URL: {exc}",
+        ) from exc
 
 
 @router.delete("/{cover_letter_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -366,6 +492,7 @@ async def delete_cover_letter(
         )
     await _check_ownership(cover_letter, user)
 
+    await delete_cover_letter_s3_assets(cover_letter)
     await session.delete(cover_letter)
     await session.commit()
 

@@ -21,6 +21,7 @@ from app.routes.jobs import router as jobs_router
 from app.routes.onboarding import router as onboarding_router
 from app.routes.profile import router as profile_router
 from app.routes.resumes import router as resume_router
+from app.routes.user_resume import router as user_resume_router
 from app.routes.settings import router as settings_router
 from app.schemas.errors import ErrorDetail, ErrorResponse
 
@@ -163,6 +164,7 @@ app.include_router(dashboard_router)
 app.include_router(onboarding_router)
 app.include_router(profile_router)
 app.include_router(resume_router)
+app.include_router(user_resume_router)
 app.include_router(cover_letter_router)
 app.include_router(interview_router)
 app.include_router(jobs_router)

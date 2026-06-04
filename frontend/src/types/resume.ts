@@ -1,6 +1,7 @@
 export interface ResumeGenerateRequest {
   job_id?: string;
   job_description?: string;
+  force_regenerate?: boolean;
 }
 
 export interface ResumeGenerateManualRequest {
@@ -45,6 +46,7 @@ export interface ResumeResponse {
   ats_score: number | null;
   ats_breakdown: Record<string, unknown> | null;
   content_json: Record<string, unknown> | null;
+  pdf_url?: string | null;
   created_at: string;
   updated_at: string | null;
   status: string | null;

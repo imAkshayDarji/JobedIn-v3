@@ -1,3 +1,4 @@
+import { ResumeDownloadButton } from "@/components/features/ResumeDownloadButton";
 import type {
   ResumeResponse,
   ResumeContent,
@@ -200,7 +201,10 @@ export function ResumeDetail({ resume }: ResumeDetailProps) {
             <p className="text-gray-500">{resume.company_name}</p>
           )}
         </div>
-        <ATSBadge score={resume.ats_score} />
+        <div className="flex flex-col items-end gap-2">
+          <ResumeDownloadButton resumeId={resume.id} />
+          <ATSBadge score={resume.ats_score} />
+        </div>
       </div>
 
       {resume.ats_breakdown && (

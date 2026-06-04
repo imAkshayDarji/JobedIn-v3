@@ -29,6 +29,12 @@ class CandidateProfile(TimestampModel, table=True):
     )
     onboarding_step: int = Field(default=0)
     onboarding_completed: bool = Field(default=False)
+    resume_s3_key: str | None = Field(default=None)
+    resume_upload_filename: str | None = Field(default=None)
+    resume_uploaded_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
 
     skills: list["Skill"] = Relationship(  # type: ignore[assignment]
         back_populates="candidate",

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { JobMatchScore } from "@/components/features/JobMatchScore";
 import { ApplyModal } from "@/components/features/ApplyModal";
+import { JobDocumentsSection } from "@/components/features/JobDocumentsSection";
 import { getJob, getJobScore, saveJob, unsaveJob } from "@/lib/api/jobs";
 import { formatSalary } from "@/lib/utils";
 import type { JobDetail, MatchBreakdown } from "@/types/job";
@@ -252,6 +253,8 @@ export default function JobDetailPage() {
           </div>
 
           <div className="space-y-4">
+            <JobDocumentsSection jobId={jobId} />
+
             {matchScore != null && breakdown && (
               <JobMatchScore
                 matchScore={matchScore}

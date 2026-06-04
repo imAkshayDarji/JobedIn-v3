@@ -35,6 +35,13 @@ from app.schemas.ai import (
     JobAnalysis,
     ResumeContent,
 )
+from app.services.pdf_generator import CoverLetterPDFGenerator, ResumePDFGenerator
+from app.services.s3_storage import (
+    S3Storage,
+    S3StorageError,
+    generated_cover_letter_pdf_key,
+    generated_resume_pdf_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +109,7 @@ class AIPipeline:
         self,
         job_analysis: JobAnalysis,
         candidate_data: dict[str, Any],
+        uploaded_resume_text: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> GapAnalysis:
         log_ctx = {"pipeline_step": "gap_analysis", **(context or {})}
@@ -111,6 +119,7 @@ class AIPipeline:
             messages=gap_analysis_prompt(
                 job_analysis_json=job_analysis.model_dump_json(),
                 candidate_profile_json=json.dumps(candidate_data),
+                uploaded_resume_text=uploaded_resume_text,
             ),
             response_model=GapAnalysis,
             context=log_ctx,
@@ -125,6 +134,7 @@ class AIPipeline:
         job_analysis: JobAnalysis,
         gap_analysis: GapAnalysis,
         candidate_data: dict[str, Any],
+        uploaded_resume_text: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> ResumeContent:
         log_ctx = {"pipeline_step": "generate_resume", **(context or {})}
@@ -135,6 +145,7 @@ class AIPipeline:
                 job_analysis_json=job_analysis.model_dump_json(),
                 gap_analysis_json=gap_analysis.model_dump_json(),
                 candidate_profile_json=json.dumps(candidate_data),
+                uploaded_resume_text=uploaded_resume_text,
             ),
             response_model=ResumeContent,
             context=log_ctx,
@@ -171,6 +182,10 @@ class AIPipeline:
         job_description: str,
         candidate_profile_id: str,
         user_id: str,
+        uploaded_resume_text: str | None = None,
+        job_title: str = "",
+        company_name: str = "",
+        resume_id: str | None = None,
         get_session: Callable[[], Coroutine[Any, Any, AsyncSession]] | None = None,
     ) -> dict[str, Any]:
         session_factory = get_session or self._session_factory
@@ -187,9 +202,21 @@ class AIPipeline:
             "candidate_id": candidate_profile_id,
         }
 
+        user_name = f"{candidate_data.get('first_name', '')} {candidate_data.get('last_name', '')}".strip()
+
         try:
             result = await asyncio.wait_for(
-                self._execute_pipeline(job_description, candidate_data, ctx),
+                self._execute_pipeline(
+                    job_description,
+                    candidate_data,
+                    ctx,
+                    uploaded_resume_text=uploaded_resume_text,
+                    user_id=user_id,
+                    user_name=user_name,
+                    job_title=job_title,
+                    company_name=company_name,
+                    resume_id=resume_id,
+                ),
                 timeout=float(settings.AI_PIPELINE_TIMEOUT_SECONDS),
             )
         except asyncio.TimeoutError:
@@ -204,12 +231,29 @@ class AIPipeline:
         job_description: str,
         candidate_data: dict[str, Any],
         ctx: dict[str, Any],
+        uploaded_resume_text: str | None = None,
+        user_id: str = "",
+        user_name: str = "",
+        job_title: str = "",
+        company_name: str = "",
+        resume_id: str | None = None,
     ) -> dict[str, Any]:
         job_analysis = await self.analyze_job(job_description, context=ctx)
 
-        gap = await self.gap_analysis(job_analysis, candidate_data, context=ctx)
+        gap = await self.gap_analysis(
+            job_analysis,
+            candidate_data,
+            uploaded_resume_text=uploaded_resume_text,
+            context=ctx,
+        )
 
-        resume = await self.generate_resume(job_analysis, gap, candidate_data, context=ctx)
+        resume = await self.generate_resume(
+            job_analysis,
+            gap,
+            candidate_data,
+            uploaded_resume_text=uploaded_resume_text,
+            context=ctx,
+        )
 
         for attempt in range(MAX_ATS_RETRIES):
             ats_result = await self.validate_ats(resume, job_analysis, context=ctx)
@@ -237,21 +281,62 @@ class AIPipeline:
         else:
             ats_result = await self.validate_ats(resume, job_analysis, context=ctx)
 
+        pdf_s3_key: str | None = None
+        pdf_url: str | None = None
+        if resume_id and user_id:
+            pdf_s3_key, pdf_url = await self._upload_resume_pdf(
+                resume=resume,
+                user_id=user_id,
+                resume_id=resume_id,
+                user_name=user_name,
+                job_title=job_title,
+                company_name=company_name,
+            )
+
         return {
             "job_analysis": job_analysis.model_dump(),
             "gap_analysis": gap.model_dump(),
             "resume": resume.model_dump(),
             "ats_result": ats_result.model_dump(),
+            "pdf_s3_key": pdf_s3_key,
+            "pdf_url": pdf_url,
         }
+
+    async def _upload_resume_pdf(
+        self,
+        resume: ResumeContent,
+        user_id: str,
+        resume_id: str,
+        user_name: str,
+        job_title: str,
+        company_name: str,
+    ) -> tuple[str | None, str | None]:
+        try:
+            storage = S3Storage()
+            pdf_bytes = ResumePDFGenerator().generate(
+                resume_content=resume,
+                job_title=job_title,
+                company_name=company_name,
+                user_name=user_name or "Candidate",
+            )
+            key = generated_resume_pdf_key(user_id, resume_id)
+            await storage.upload_file(pdf_bytes, key, "application/pdf")
+            url = await storage.get_presigned_url(key)
+            return key, url
+        except S3StorageError as exc:
+            logger.error(f"Resume PDF upload failed: {exc}", extra={"resume_id": resume_id})
+            raise AIPipelineError(f"Resume PDF upload failed: {exc}") from exc
 
     async def generate_cover_letter(
         self,
         job_analysis: JobAnalysis,
         candidate_data: dict[str, Any],
         tone: str = "professional",
+        generated_resume_json: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
     ) -> CoverLetterContent:
         log_ctx = {"pipeline_step": "generate_cover_letter", **(context or {})}
+        resume_json_str = json.dumps(generated_resume_json) if generated_resume_json else None
         start = time.monotonic()
         result = await self._client.call(
             task="generate_cover_letter",
@@ -259,6 +344,7 @@ class AIPipeline:
                 job_analysis_json=job_analysis.model_dump_json(),
                 candidate_profile_json=json.dumps(candidate_data),
                 tone=tone,
+                generated_resume_json=resume_json_str,
             ),
             response_model=CoverLetterContent,
             context=log_ctx,
@@ -274,6 +360,10 @@ class AIPipeline:
         candidate_profile_id: str,
         user_id: str,
         tone: str = "professional",
+        generated_resume_json: dict[str, Any] | None = None,
+        job_title: str = "",
+        company_name: str = "",
+        cover_letter_id: str | None = None,
         get_session: Callable[[], Coroutine[Any, Any, AsyncSession]] | None = None,
     ) -> dict[str, Any]:
         session_factory = get_session or self._session_factory
@@ -291,9 +381,22 @@ class AIPipeline:
             "tone": tone,
         }
 
+        user_name = f"{candidate_data.get('first_name', '')} {candidate_data.get('last_name', '')}".strip()
+
         try:
             result = await asyncio.wait_for(
-                self._execute_cover_letter_pipeline(job_description, candidate_data, tone, ctx),
+                self._execute_cover_letter_pipeline(
+                    job_description,
+                    candidate_data,
+                    tone,
+                    ctx,
+                    generated_resume_json=generated_resume_json,
+                    user_id=user_id,
+                    user_name=user_name,
+                    job_title=job_title,
+                    company_name=company_name,
+                    cover_letter_id=cover_letter_id,
+                ),
                 timeout=float(settings.AI_PIPELINE_TIMEOUT_SECONDS),
             )
         except asyncio.TimeoutError:
@@ -309,14 +412,68 @@ class AIPipeline:
         candidate_data: dict[str, Any],
         tone: str,
         ctx: dict[str, Any],
+        generated_resume_json: dict[str, Any] | None = None,
+        user_id: str = "",
+        user_name: str = "",
+        job_title: str = "",
+        company_name: str = "",
+        cover_letter_id: str | None = None,
     ) -> dict[str, Any]:
         job_analysis = await self.analyze_job(job_description, context=ctx)
-        cover_letter = await self.generate_cover_letter(job_analysis, candidate_data, tone=tone, context=ctx)
+        cover_letter = await self.generate_cover_letter(
+            job_analysis,
+            candidate_data,
+            tone=tone,
+            generated_resume_json=generated_resume_json,
+            context=ctx,
+        )
+
+        pdf_s3_key: str | None = None
+        pdf_url: str | None = None
+        if cover_letter_id and user_id:
+            pdf_s3_key, pdf_url = await self._upload_cover_letter_pdf(
+                cover_letter=cover_letter,
+                user_id=user_id,
+                cover_letter_id=cover_letter_id,
+                user_name=user_name,
+                job_title=job_title,
+                company_name=company_name,
+            )
 
         return {
             "job_analysis": job_analysis.model_dump(),
             "cover_letter": cover_letter.model_dump(),
+            "pdf_s3_key": pdf_s3_key,
+            "pdf_url": pdf_url,
         }
+
+    async def _upload_cover_letter_pdf(
+        self,
+        cover_letter: CoverLetterContent,
+        user_id: str,
+        cover_letter_id: str,
+        user_name: str,
+        job_title: str,
+        company_name: str,
+    ) -> tuple[str | None, str | None]:
+        try:
+            storage = S3Storage()
+            pdf_bytes = CoverLetterPDFGenerator().generate(
+                cover_letter_content=cover_letter,
+                job_title=job_title,
+                company_name=company_name,
+                user_name=user_name or "Candidate",
+            )
+            key = generated_cover_letter_pdf_key(user_id, cover_letter_id)
+            await storage.upload_file(pdf_bytes, key, "application/pdf")
+            url = await storage.get_presigned_url(key)
+            return key, url
+        except S3StorageError as exc:
+            logger.error(
+                f"Cover letter PDF upload failed: {exc}",
+                extra={"cover_letter_id": cover_letter_id},
+            )
+            raise AIPipelineError(f"Cover letter PDF upload failed: {exc}") from exc
 
     async def _verify_ownership(
         self, session: AsyncSession, candidate_profile_id: str, user_id: str

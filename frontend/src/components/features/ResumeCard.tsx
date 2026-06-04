@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ResumeDownloadButton } from "@/components/features/ResumeDownloadButton";
 import type { ResumeListItem } from "@/types/resume";
 
 interface ResumeCardProps {
@@ -27,25 +28,27 @@ export function ResumeCard({ resume }: ResumeCardProps) {
   });
 
   return (
-    <Link href={`/resumes/${resume.id}`}>
-      <div className="rounded-lg border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-gray-900 truncate">{title}</h3>
-            {company && (
-              <p className="mt-0.5 text-sm text-gray-500 truncate">
-                {company}
-              </p>
-            )}
-            <p className="mt-2 text-xs text-gray-400">{dateStr}</p>
-          </div>
-          <span
-            className={`ml-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getAtsScoreColor(resume.ats_score)}`}
-          >
-            ATS: {getAtsScoreLabel(resume.ats_score)}
-          </span>
-        </div>
+    <div className="rounded-lg border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm transition-all">
+      <div className="flex items-start justify-between">
+        <Link href={`/resumes/${resume.id}`} className="min-w-0 flex-1">
+          <h3 className="font-semibold text-gray-900 truncate">{title}</h3>
+          {company && (
+            <p className="mt-0.5 text-sm text-gray-500 truncate">{company}</p>
+          )}
+          <p className="mt-2 text-xs text-gray-400">{dateStr}</p>
+        </Link>
+        <span
+          className={`ml-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getAtsScoreColor(resume.ats_score)}`}
+        >
+          ATS: {getAtsScoreLabel(resume.ats_score)}
+        </span>
       </div>
-    </Link>
+      <div className="mt-3 flex items-center gap-3">
+        <Link href={`/resumes/${resume.id}`} className="text-sm text-blue-600 hover:underline">
+          View
+        </Link>
+        <ResumeDownloadButton resumeId={resume.id} />
+      </div>
+    </div>
   );
 }

@@ -19,3 +19,6 @@ class Resume(TimestampModel, table=True):
     ats_breakdown: dict | None = Field(default=None, sa_column=Column(SA_JSON))
     template_id: str | None = Field(default=None)
     status: str | None = Field(default=None)
+    pdf_s3_key: str | None = Field(default=None)
+    pdf_url: str | None = Field(default=None)
+    uploaded_resume_s3_key: str | None = Field(default=None)

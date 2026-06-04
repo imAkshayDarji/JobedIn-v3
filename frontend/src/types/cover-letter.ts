@@ -2,6 +2,7 @@ export interface CoverLetterGenerateRequest {
   job_id?: string;
   job_description?: string;
   tone?: "professional" | "casual" | "enthusiastic";
+  force_regenerate?: boolean;
 }
 
 export interface CoverLetterGenerateManualRequest {
@@ -44,6 +45,7 @@ export interface CoverLetterResponse {
   company_name: string | null;
   content: string | null;
   content_json: Record<string, unknown> | null;
+  pdf_url?: string | null;
   tone: string | null;
   ai_model_used: string | null;
   status: string | null;

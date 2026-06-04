@@ -38,16 +38,24 @@ def analyze_job_prompt(job_description: str) -> list[dict[str, str]]:
 def gap_analysis_prompt(
     job_analysis_json: str,
     candidate_profile_json: str,
+    uploaded_resume_text: str | None = None,
 ) -> list[dict[str, str]]:
+    uploaded_block = ""
+    if uploaded_resume_text and uploaded_resume_text.strip():
+        uploaded_block = (
+            "UPLOADED RESUME (primary source — compare skills and experience from here first):\n"
+            f"{wrap_user_data(uploaded_resume_text)}\n\n"
+        )
     return [
         {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
         {
             "role": "user",
             "content": (
-                "Compare the job requirements against the candidate's profile. "
+                "Compare the job requirements against the candidate's profile and uploaded resume. "
                 "Identify skill matches, gaps, and strengths.\n\n"
                 "JOB ANALYSIS:\n"
                 f"{wrap_user_data(job_analysis_json)}\n\n"
+                f"{uploaded_block}"
                 "CANDIDATE PROFILE:\n"
                 f"{wrap_user_data(candidate_profile_json)}\n\n"
                 "Respond with a JSON object matching this schema:\n"
@@ -70,17 +78,27 @@ def generate_resume_prompt(
     job_analysis_json: str,
     gap_analysis_json: str,
     candidate_profile_json: str,
+    uploaded_resume_text: str | None = None,
 ) -> list[dict[str, str]]:
+    uploaded_block = ""
+    if uploaded_resume_text and uploaded_resume_text.strip():
+        uploaded_block = (
+            "UPLOADED RESUME (primary source):\n"
+            f"{wrap_user_data(uploaded_resume_text)}\n\n"
+        )
     return [
         {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
         {
             "role": "user",
             "content": (
-                "Generate a tailored resume for this candidate targeting this job.\n\n"
+                "Generate a tailored resume for this candidate targeting this job.\n"
+                "Use the uploaded resume as the primary source. Enrich with profile data where gaps exist. "
+                "Tailor all content to match the job description.\n\n"
                 "JOB ANALYSIS:\n"
                 f"{wrap_user_data(job_analysis_json)}\n\n"
                 "GAP ANALYSIS:\n"
                 f"{wrap_user_data(gap_analysis_json)}\n\n"
+                f"{uploaded_block}"
                 "CANDIDATE PROFILE:\n"
                 f"{wrap_user_data(candidate_profile_json)}\n\n"
                 "Respond with a JSON object matching this schema:\n"
@@ -169,16 +187,24 @@ def generate_cover_letter_prompt(
     job_analysis_json: str,
     candidate_profile_json: str,
     tone: str = "professional",
+    generated_resume_json: str | None = None,
 ) -> list[dict[str, str]]:
+    resume_block = ""
+    if generated_resume_json and generated_resume_json.strip():
+        resume_block = (
+            "GENERATED RESUME FOR THIS JOB (align the cover letter with this content):\n"
+            f"{wrap_user_data(generated_resume_json)}\n\n"
+        )
     return [
         {"role": "system", "content": SYSTEM_INSTRUCTION_ANTI_INJECTION},
         {
             "role": "user",
             "content": (
                 f"Generate a compelling cover letter for this candidate targeting this job. "
-                f"Use a {tone} tone.\n\n"
+                f"Use a {tone} tone. Reference achievements from the generated resume when provided.\n\n"
                 "JOB ANALYSIS:\n"
                 f"{wrap_user_data(job_analysis_json)}\n\n"
+                f"{resume_block}"
                 "CANDIDATE PROFILE:\n"
                 f"{wrap_user_data(candidate_profile_json)}\n\n"
                 "Respond with a JSON object matching this schema:\n"

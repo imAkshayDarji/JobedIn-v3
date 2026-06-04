@@ -20,3 +20,5 @@ class CoverLetter(TimestampModel, table=True):
     tone: str | None = Field(default=None)
     ai_model_used: str | None = Field(default=None)
     status: str | None = Field(default=None)
+    pdf_s3_key: str | None = Field(default=None)
+    pdf_url: str | None = Field(default=None)
