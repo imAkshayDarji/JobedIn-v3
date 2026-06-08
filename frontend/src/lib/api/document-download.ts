@@ -1,19 +1,13 @@
 import { authenticatedFetch } from "@/lib/api";
 
-async function openPdfFromRedirect(path: string): Promise<void> {
+interface PdfUrlResponse {
+  url: string;
+}
+
+async function openPdfUrl(path: string): Promise<void> {
   const response = await authenticatedFetch(path, {
     method: "GET",
-    redirect: "manual",
   });
-
-  if (response.status === 307 || response.status === 302) {
-    const url = response.headers.get("Location");
-    if (!url) {
-      throw new Error("Download URL missing from response");
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -22,13 +16,17 @@ async function openPdfFromRedirect(path: string): Promise<void> {
     throw new Error(detail);
   }
 
-  throw new Error("Unexpected response when downloading PDF");
+  const data = (await response.json()) as PdfUrlResponse;
+  if (!data.url) {
+    throw new Error("Download URL missing from response");
+  }
+  window.open(data.url, "_blank", "noopener,noreferrer");
 }
 
 export async function downloadResumePdf(resumeId: string): Promise<void> {
-  await openPdfFromRedirect(`/api/resumes/${resumeId}/pdf`);
+  await openPdfUrl(`/api/resumes/${resumeId}/pdf`);
 }
 
 export async function downloadCoverLetterPdf(coverLetterId: string): Promise<void> {
-  await openPdfFromRedirect(`/api/cover-letters/${coverLetterId}/pdf`);
+  await openPdfUrl(`/api/cover-letters/${coverLetterId}/pdf`);
 }

@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 
 from arq import create_pool as arq_create_pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse
 from slowapi.util import get_remote_address
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -467,7 +466,7 @@ async def download_cover_letter_pdf(
         cover_letter.pdf_url = url
         session.add(cover_letter)
         await session.commit()
-        return RedirectResponse(url=url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        return {"url": url}
     except S3StorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
