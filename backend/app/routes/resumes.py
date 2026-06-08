@@ -81,11 +81,17 @@ async def _replace_existing_job_resume(
     session: AsyncSession,
 ) -> Resume | None:
     result = await session.execute(
-        select(Resume).where(Resume.user_id == user_id, Resume.job_id == job_id)
+        select(Resume)
+        .where(Resume.user_id == user_id, Resume.job_id == job_id)
+        .order_by(Resume.created_at.desc())
     )
-    existing = result.scalar_one_or_none()
-    if existing is None:
+    rows = result.scalars().all()
+    if not rows:
         return None
+    for row in rows[1:]:
+        await delete_resume_s3_assets(row)
+        await session.delete(row)
+    existing = rows[0]
     await delete_resume_s3_assets(existing)
     await session.delete(existing)
     await session.commit()
@@ -193,7 +199,7 @@ async def generate_resume(
                     Resume.user_id == user.id,
                     Resume.job_id == job_id,
                     Resume.status == "completed",
-                )
+                ).order_by(Resume.created_at.desc()).limit(1)
             )
             completed = completed_result.scalar_one_or_none()
             if completed:
